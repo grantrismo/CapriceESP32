@@ -1,0 +1,19 @@
+#pragma once
+
+#include <stdint.h>
+
+#include "gbuf.h"
+#include "rect.h"
+
+#define DISPLAY_WIDTH (320)
+#define DISPLAY_HEIGHT (240)
+#define DISPLAY_KEYB_HEIGHT (40)
+
+
+void display_init(void);
+void display_poweroff(void);
+void display_clear(uint16_t color);
+void display_update();
+void display_update_rect(rect_t r);
+void display_drain(void);
+void display_screenshot(const char *path);

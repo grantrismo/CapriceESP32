@@ -29,6 +29,7 @@
 
 #define CPC_FILE_LENGTH           13
 #define MAX_FILE_NAME              256
+#define CHEAT_FILE_MAGIC          (0x2E636D66)
 #define PARENT_PATH               "/.."
 
 #ifdef SIM
@@ -36,11 +37,13 @@
 #define DEFAULT_DISK_PATH         "../games"
 #define DEFAULT_CAPRICE_PATH      "."
 #define DEFAULT_SCREENSHOT_PATH   "."
+#define DEFAULT_CHEAT_PATH        "../cheat"
 #else
 #define ROOT_PATH                 "/sd"
 #define DEFAULT_DISK_PATH         "/sd/cpc/dsk"
 #define DEFAULT_CAPRICE_PATH      "/sd/cpc/cps"
 #define DEFAULT_SCREENSHOT_PATH   "/sd/cpc/scr"
+#define DEFAULT_CHEAT_PATH        "/sd/cpc/cmf"
 #endif
 
 #define NODISK_FILENAME           ""
@@ -48,6 +51,7 @@
 #define DISK_EXTENSION_SHORT      "dsk"
 #define DISK_EXTENSION            "." DISK_EXTENSION_SHORT
 #define SCREENSHOT_EXTENSION      ".bmp"
+#define CHEAT_EXTENSION           ".cmf"
 #define NEW_DISK_FILENAME         "New Disk" DISK_EXTENSION
 #define LASTSESSION_FILENAME      "LastSession" CONTEXT_EXTENSION
 
@@ -57,6 +61,11 @@
 #define SAVE_SCREENSHOT_TITLE     "Screenshot saving"
 
 #define	chrNull							0x0000
+
+#define errNone                       0x0000  // No error
+#define memErrorClass                 0x0100  // Memory Manager
+// copied from MemoryMgr.h
+#define memErrNotEnoughSpace          (memErrorClass | 2)
 
 // missing items from PalmOS
 #define EndianSwap32(p) p

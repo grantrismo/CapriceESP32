@@ -86,6 +86,8 @@ extern void CPCPushEvent(const CapriceEvent caprice_event);
 extern Boolean CPCHandleEvent(event_t* Event);
 extern Err CPCLoadDiskImage(char* PathnameP, char* FilenameP);
 extern UInt16 CPCLoadDiskAndGetCatalog(char* PathnameP, char* FilenameP, char** Cat);
+extern tVoid CPCPoke(tULong addr, tULong val);
+extern tUChar CPCPeek(tULong addr);
 extern void AppStop(void);
 
 //extern void SetRenderingParameters(tUChar Rendering);

@@ -54,11 +54,6 @@
 // Form Alert needs a function to display error //??
 #define FrmAlert(p)
 
-#define errNone                       0x0000  // No error
-#define memErrorClass                 0x0100  // Memory Manager
-// copied from MemoryMgr.h
-#define memErrNotEnoughSpace          (memErrorClass | 2)
-
 #define MISC_SECTION_SIZE          ( CONTEXT_SIZE_Z80_SZ + CONTEXT_SIZE_Z80_SZ_BIT + CONTEXT_SIZE_Z80_SZP + \
                                      CONTEXT_SIZE_Z80_SZHV_inc + CONTEXT_SIZE_Z80_SZHV_dec + \
                                      CONTEXT_SIZE_MODE0_TABLE + CONTEXT_SIZE_MODE1_TABLE + \

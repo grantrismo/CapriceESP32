@@ -1719,3 +1719,5 @@ extern tULong Engine_DiskAutoStart(tDiskOperation* DiskOperation);
 extern tULong Engine_SoundCallback(tSoundCallbackParam* paramP, tVoid* bufferP, tULong* bufferSizeP);
 extern tULong Engine_WinCopyScreen(tNativeCPC* NativeCPC);
 extern tVoid Sound_Calculate_Level_Tables(tNativeCPC* NativeCPC);
+extern tVoid Engine_Poke(tNativeCPC* NativeCPC, tULong addr, tULong val);
+extern tUChar Engine_Peek(tNativeCPC* NativeCPC, tULong addr);

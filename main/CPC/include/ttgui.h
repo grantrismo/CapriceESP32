@@ -72,6 +72,29 @@ typedef enum
   TTGUI_INVERSE
 } ttgui_style;
 
+typedef enum
+{
+	TTGUI_OT_PREFS = 0,
+	TTGUI_OT_GAME,
+	TTGUI_OT_CPC
+} ttgui_ot_type;
+
+typedef struct
+{
+	int lenght;
+	char **selection;				// possible Selections
+} ttgui_sl_obj;
+
+// option Object
+typedef struct
+{
+	ttgui_ot_type type;   // type of object
+	int current;					// current option option selected
+	void (*on_select_caller)(void);			// on select function call
+	char *text;								// the text perfix Visible
+	ttgui_sl_obj options;							// the selection object
+} ttgui_ot_obj;
+
 //text Object:
 typedef struct
 {
@@ -100,7 +123,7 @@ typedef struct
 	void (*on_access_caller)(void);			// on pannel access function call
   void (*on_leave_caller)(void);			// on pannel leave function call
 	void (*on_update_caller)(void);
-	const char title[17];						// the title of the panel
+	const char title[19];						// the title of the panel
 	uint16_t top;							// dimension of the panel top coord
 	uint16_t left;							// dimension of the panel top coord
 	uint16_t width;							// dimension of the panel top coord

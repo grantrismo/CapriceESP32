@@ -1816,7 +1816,7 @@ tUChar bOpCode;
       case rlca:        RLCA; break;
       case rra:         RRA; break;
       case rrca:        RRCA; break;
-      case rst00:       break; //RST(0x0000); break; // Some games fall into this ? Fixed by ignoring it
+      case rst00:       RST(0x0000); break; // Some games fall into this ? Fixed by ignoring it?
       case rst08:       RST(0x0008); break;
       case rst10:       RST(0x0010); break;
       case rst18:       RST(0x0018); break;

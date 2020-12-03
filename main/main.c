@@ -36,6 +36,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_task_wdt.h"
+#include "soc/periph_defs.h"
 
 #else
 #include <sys/time.h>
@@ -66,8 +67,10 @@
     battery_init();
     settings_init();
 
+
     // Setup sdcard and display error message on failure
   	// TODO: Make it nonfatal so user can still browse SPIFFS or so
+
   	if ((sdcard_init("/sd")) != 0) {
   		printf("Please insert the sdcard and restart the device.");
       continue;
@@ -551,7 +554,10 @@ void app_main_task(void *arg)
     if (NewRockerAttach == RockerAsMenuControl)
     {
       if (ttgui_windowManager(&event) == TTGUI_NEEDGUIUPDATE)
-        display_update();
+        {
+          printf("ttgui_update request received\n");
+          display_update();
+        }
     }
 
 
@@ -568,6 +574,10 @@ void app_main_task(void *arg)
 
       if (event.caprice.event == CapriceEventMenuRedraw)
       {
+        // let previous rendering finish within 35ms
+        vTaskDelay(35);
+
+        // call the ttgui and swow it
         ttgui_setup();
         display_update();
       }

@@ -24,6 +24,8 @@ $(APP_FW): $(APP_BIN)
 	@echo MKFW $@
 	@$(MKFW) "$(PROJECT_NAME)($(VERSION))" media/tile.raw 0 16 786432 "$(PROJECT_NAME)" $^
 	@mv firmware.fw $@
+	@cp build/caprice-esp32.fw release/caprice-esp32.fw
+	@cp build/caprice-esp32.elf release/caprice-esp32.elf
 
 $(APP_FW_EMUS): $(APP_BIN)
 	tools/make_emus_fw.sh

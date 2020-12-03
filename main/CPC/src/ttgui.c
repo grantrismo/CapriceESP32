@@ -1143,6 +1143,7 @@ void ttgui_otobj_options_setup(void)
 *
 ***********************************************************************/
 {
+
 	char buf[20]={0};
 	int index;
 	ttgui_pn_obj* old_pn_obj = pn_obj;

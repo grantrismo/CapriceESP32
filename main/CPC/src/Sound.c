@@ -22,14 +22,17 @@
 */
 
 #include <stdio.h>
+#include <string.h>
 
-#include "Native_CPC.h"
+#include "Sound.h"
 #include "CPC.h"
 #include "Math_math.h"
 #include "Prefs.h"
 #include "Routines.h"
 
 #include "audio.h"
+#include "a2dp.h"
+
 
 
 //===================
@@ -47,7 +50,7 @@ extern "C" {
 
 #define SOUND_MUTE_VOLUME           0
 
-#define SOUND_VOLUME_STEPS          10
+#define SOUND_VOLUME_STEPS          100
 #define SOUND_VOLUME_CHANGE_STEP    2
 
 #define SOUND_SAMPLE_GAIN           1 // 1024 = 100% Palm Sample Gain
@@ -69,7 +72,7 @@ extern "C" {
 static const tUShort Amplitudes_AY[16] =
 {
    0, 836, 1212, 1773, 2619, 3875, 5397, 8823,
-   10392, 16706, 23339, 29292, 36969, 46421, 55195, 65535
+   10392, 16706, 23339, 29292, 36969, 46421, 55195, 65535,
 };
 
 // Routines
@@ -78,10 +81,86 @@ static tVoid MemMove(tUChar* destP,
                      tULong numBytes);
 
 // Sound buffer handling
-tUChar SoundBufferP[2][SND_BUFFER_SIZE]  = {0};
+tUChar** SoundBufferP[2] = {NULL};
+
 tUChar SoundBufferCurrent = 0;
 tULong SoundBytesToWrite = 0;
 tUChar SoundBufferRead = 0;
+tUChar *pbSndBufferLastP = NULL;
+
+Err SoundBufferAlloc()
+{
+  SoundBufferP[0]=calloc(SND_BUFFER_SIZE,1);
+  if (SoundBufferP[0] == NULL)
+    return (memErrNotEnoughSpace);
+  else
+  {
+    SoundBufferP[1]=SoundBufferP[0];
+    return (errNone);
+  }
+}
+
+tVoid SoundBufferFree()
+{
+  if (SoundBufferP[0] != NULL)
+  {
+    free(SoundBufferP[0]);
+    SoundBufferP[0] = NULL;
+    SoundBufferP[1] = NULL;
+  }
+}
+
+Err SoundBufferReset(tNativeCPC* NativeCPC)
+/***********************************************************************
+ *
+ *  SoundBufferReset
+ *
+ ***********************************************************************/
+#undef SOUNDSTART_TRACE_ENABLED
+//#define SOUNDSTART_TRACE_ENABLED
+
+#ifdef SOUNDSTART_TRACE_ENABLED
+#  define SOUNDSTART_TRACE_SHOW_INT(value) TRACE_SHOW_INT("SoundStart", value)
+#else /* SOUNDSTART_TRACE_ENABLED */
+#  define SOUNDSTART_TRACE_SHOW_INT(value)
+#endif /* SOUNDSTART_TRACE_ENABLED */
+{
+  tPSG* PSG;
+
+  if (NativeCPC == NULL)
+  {
+    return (sysErrNoFreeResource);
+  }
+
+  PSG = (tPSG*)(NativeCPC->PSG);
+
+  if (PSG == NULL)
+  {
+    return (memErrNotEnoughSpace);
+  }
+
+  if ((PSG->pbSndBuffer == NULL) || (PSG->snd_bufferptr == NULL))
+  {
+    return (memErrNotEnoughSpace);
+  }
+
+  SOUNDSTART_TRACE_SHOW_INT(1);
+
+  //
+  // Prepare callback parameters
+  //
+  SoundBufferRead = 0;
+  SoundBufferCurrent = 0;
+  SoundBytesToWrite = 0;
+  SoundBufferRead = 0;
+  PSG->pbSndBuffer = (tUChar*)SoundBufferP[SoundBufferCurrent];
+  PSG->pbSndBufferEnd = PSG->pbSndBuffer + SND_BUFFER_SIZE;
+  PSG->snd_bufferptr = PSG->pbSndBuffer;
+  PSG->FilledBufferSize = 0;
+  pbSndBufferLastP = PSG->pbSndBuffer;
+
+  return errNone;
+}
 
 Err SoundStart(tNativeCPC* NativeCPC)
 /***********************************************************************
@@ -126,10 +205,11 @@ Err SoundStart(tNativeCPC* NativeCPC)
   SoundBufferCurrent = 0;
   SoundBytesToWrite = 0;
   SoundBufferRead = 0;
-  PSG->pbSndBuffer = (tUChar*)&SoundBufferP[SoundBufferCurrent][0];
-  PSG->pbSndBufferEnd = PSG->pbSndBuffer + SND_BUFFER_SIZE - 1;
+  PSG->pbSndBuffer = (tUChar*)SoundBufferP[SoundBufferCurrent];
+  PSG->pbSndBufferEnd = PSG->pbSndBuffer + SND_BUFFER_SIZE;
   PSG->snd_bufferptr = PSG->pbSndBuffer;
   PSG->FilledBufferSize = 0;
+  pbSndBufferLastP = PSG->pbSndBuffer;
 
   // init hardware
   audio_init();
@@ -166,6 +246,7 @@ tVoid SoundPlay(tNativeCPC* NativeCPC)
 #  define SOUNDPLAY_TRACE_SHOW_INT(value)
 #endif /* SOUNDPLAY_TRACE_ENABLED */
 {
+
 tPSG* PSG = (tPSG*)(NativeCPC->PSG);
 
   if (audio_device_active() == false)
@@ -182,15 +263,22 @@ tPSG* PSG = (tPSG*)(NativeCPC->PSG);
 
   SOUNDPLAY_TRACE_SHOW_INT(1);
 
-  PSG->snd_enabled = 1;
-
   SOUNDPLAY_TRACE_SHOW_INT(2);
 
   audio_volume_set(SOUND_SCALE_VOLUME(prefP->SoundVolume));
 
   SOUNDPLAY_TRACE_SHOW_INT(3);
 
-  audio_play();
+  PSG->snd_enabled = 1;
+
+  if (prefP->SoundRenderer == 0)
+  {
+    i2s_set_emu_state_running();
+    audio_play();
+  }
+  else
+    a2dp_set_emu_state_running();
+
 
   SOUNDPLAY_TRACE_SHOW_INT(4);
 }
@@ -211,6 +299,8 @@ tVoid SoundPause(tNativeCPC* NativeCPC)
     return;
 
   ((tPSG*)(NativeCPC->PSG))->snd_enabled = 0;
+  i2s_set_emu_state_idle();
+  a2dp_set_emu_state_idle();
 
   if (prefP->SoundEnabled == 1)
   {
@@ -220,6 +310,147 @@ tVoid SoundPause(tNativeCPC* NativeCPC)
   }
 }
 /*----------------------------------------------------------------------------*/
+
+Int32 SoundPush(tNativeCPC* NativeCPC)
+/***********************************************************************
+ *
+ *  SoundCallback
+ *
+ ***********************************************************************/
+{
+
+  tPSG* PSG = NativeCPC->PSG;
+
+  if ((NativeCPC == NULL) || (prefP->SoundEnabled == 0))
+    return (0);
+
+  // make sure Emulator is acive
+  PSG->snd_enabled = 1;
+
+  // Get and Reset Current Size
+  SoundBytesToWrite = (PSG->FilledBufferSize);
+
+  // Data available?
+  if (SoundBytesToWrite == 0)
+    return (0);
+
+  // debug
+  //printf("SoundPush: %4d : %u\n",SoundBytesToWrite,TimGetTicks());
+
+  // Flip the buffers ...
+  SoundBufferCurrent = (SoundBufferCurrent == 0) ? 1 : 0;
+
+  // ... and push it to the speaker
+  audio_submit();
+
+  // Update flip/flop Buffer
+  PSG->pbSndBuffer = (tUChar*)SoundBufferP[SoundBufferCurrent];
+  PSG->pbSndBufferEnd = PSG->pbSndBuffer + SND_BUFFER_SIZE - 1;
+  PSG->snd_bufferptr = PSG->pbSndBuffer;
+  PSG->FilledBufferSize = 0;
+
+  SoundBufferRead = 1;
+  return (SoundBytesToWrite);
+}
+/*----------------------------------------------------------------------------*/
+
+Int32 SoundVariableCallback(tNativeCPC* NativeCPC, UInt8 *data, Int32 len)
+/***********************************************************************
+ *
+ *  SoundVariableCallback
+ *
+ ***********************************************************************/
+{
+
+
+  // the inits are:
+  /*
+    PSG->pbSndBuffer = (tUChar*)&SoundBufferP[SoundBufferCurrent][0];
+    PSG->pbSndBufferEnd = PSG->pbSndBuffer + SND_BUFFER_SIZE;
+    PSG->snd_bufferptr = PSG->pbSndBuffer;
+    PSG->FilledBufferSize = 0;
+  */
+  // everything is in samples (2*2 = 4 bytes order) -> ULong cast
+  // in case EMU not ready, return silence
+  //if (len == 0)
+    //return (len);
+
+  //printf("S:%d,%d\n",TimGetTicks(),len);
+
+  // need to upsample, ESP_IDF has multiple bugs on differenet to 44100 kHz
+  if ((NativeCPC == NULL) || (prefP->SoundEnabled == 0))
+  {
+      memset(data,0,len);
+      return (len);
+  }
+
+
+  // enable emulator Sound
+  tPSG* PSG = NativeCPC->PSG;
+  PSG->snd_enabled = 1;
+
+  tULong* LastPosP = (tULong*)pbSndBufferLastP;
+  tULong* DataP = (tULong*)data;
+  tULong* MaxPosP = ((tULong*)PSG->pbSndBufferEnd);
+
+  Int32 i;
+  Int32 request_len = len/2;
+  Int32 available_len = PSG->FilledBufferSize;
+  Int32 serve_len = (request_len > available_len) ?  available_len : request_len;
+
+  if (available_len < request_len)
+  {
+    memset(data,0,len);
+    return (len);
+  }
+
+  Int32 blockd_len = (MaxPosP - LastPosP) * SND_SAMPLE_SIZE;
+  Int32 blocka_len = (blockd_len > serve_len) ? serve_len : blockd_len;
+  Int32 blockb_len = serve_len - blocka_len;
+  Int32 blockc_len = request_len - serve_len;
+
+  PSG->FilledBufferSize = (available_len - serve_len);
+
+  if (blocka_len > 0)
+  {
+      for (i=0;i<blocka_len;i+=SND_SAMPLE_SIZE)
+      {
+        *DataP++ = *LastPosP;
+        *DataP++ = *LastPosP++;
+      }
+
+
+  }
+
+  if (blockb_len > 0)
+  {
+      LastPosP = (tULong*)PSG->pbSndBuffer;
+      for (i=0;i<blockb_len;i+=SND_SAMPLE_SIZE)
+      {
+        *DataP++ = *LastPosP;
+        *DataP++ = *LastPosP++;
+      }
+
+  }
+
+  if (blockc_len > 0)
+  {
+    for (i=0;i<blockc_len;i+=SND_SAMPLE_SIZE)
+    {
+      //*DataP++ = 0;
+      //*DataP++ = 0;
+    }
+  }
+
+  // advance buffer and status information
+  pbSndBufferLastP = (LastPosP >= MaxPosP) ? PSG->pbSndBuffer : (tUChar*)LastPosP;
+  //PSG->FilledBufferSize = (available_len - serve_len);
+  SoundBufferRead = (available_len <= request_len) ? 1 : 0;
+
+  //printf("%4d,%4d,%4d,%4d,%4d,%4d,%4d,%4d,%d\n",request_len, available_len, serve_len, blocka_len, blockb_len, blockc_len, blockd_len, PSG->FilledBufferSize,TimGetTicks());
+
+  return(len);
+}
 
 tVoid Sound_Calculate_Level_Tables(tNativeCPC* NativeCPC)
 /***********************************************************************
@@ -346,47 +577,9 @@ tVoid Sound_Calculate_Level_Tables(tNativeCPC* NativeCPC)
 }
 /*----------------------------------------------------------------------------*/
 
-tULong SoundPush(tNativeCPC* NativeCPC)
-/***********************************************************************
- *
- *  SoundCallback
- *
- ***********************************************************************/
-{
-  tPSG* PSG = NativeCPC->PSG;
 
 
-  if (PSG == NULL)
-    return (0);
-
-  // Get and Reset Current Size
-  SoundBytesToWrite = (PSG->FilledBufferSize);
-
-  // Data available?
-  if (SoundBytesToWrite == 0)
-    return (0);
-
-  // debug
-  //printf("SoundPush: %4d : %u\n",SoundBytesToWrite,TimGetTicks());
-
-  // Flip the buffers ...
-  SoundBufferCurrent = (SoundBufferCurrent == 0) ? 1 : 0;
-
-  // ... and push it to the speaker
-  audio_submit();
-
-  // Update flip/flop Buffer
-  PSG->pbSndBuffer = (tUChar*)&SoundBufferP[SoundBufferCurrent][0];
-  PSG->pbSndBufferEnd = PSG->pbSndBuffer + SND_BUFFER_SIZE - 1;
-  PSG->snd_bufferptr = PSG->pbSndBuffer;
-  PSG->FilledBufferSize = 0;
-
-  SoundBufferRead = 1;
-  return (SoundBytesToWrite);
-}
-/*----------------------------------------------------------------------------*/
-
-Boolean IsBufferRead()
+tBool IsBufferRead()
 /***********************************************************************
  *
  *  IsBufferRead
@@ -404,7 +597,7 @@ Boolean IsBufferRead()
 /*----------------------------------------------------------------------------*/
 
 
-tVoid SoundIncreaseVolume(tUChar step)
+Err SoundIncreaseVolume(tUChar step)
 /***********************************************************************
  *
  *  SoundIncreaseVolume
@@ -412,7 +605,10 @@ tVoid SoundIncreaseVolume(tUChar step)
  ***********************************************************************/
 {
   if (prefP == NULL)
-    return;
+    return (memErrNotEnoughSpace);
+
+  if (prefP->SoundRenderer != 0)
+    return (sysErrNotAllowed);
 
   prefP->SoundVolume += step;
   if (prefP->SoundVolume > SOUND_VOLUME_STEPS)
@@ -424,11 +620,12 @@ tVoid SoundIncreaseVolume(tUChar step)
 
   // Ask for Preferences save
   prefP->PreferencesChanged = 1;
+  return (errNone);
 }
 /*----------------------------------------------------------------------------*/
 
 
-tVoid SoundDecreaseVolume(tUChar step)
+Err SoundDecreaseVolume(tUChar step)
 /***********************************************************************
  *
  *  SoundDecreaseVolume
@@ -437,7 +634,10 @@ tVoid SoundDecreaseVolume(tUChar step)
 {
 
   if (prefP == NULL)
-    return;
+    return (memErrNotEnoughSpace);
+
+  if (prefP->SoundRenderer != 0)
+    return (sysErrNotAllowed);
 
   if (prefP->SoundVolume <= step)
   {
@@ -452,6 +652,7 @@ tVoid SoundDecreaseVolume(tUChar step)
 
   // Ask for Preferences save
   prefP->PreferencesChanged = 1;
+  return (errNone);
 }
 /*----------------------------------------------------------------------------*/
 

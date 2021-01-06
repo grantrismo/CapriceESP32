@@ -2,4 +2,4 @@
 nvs,      data, nvs,     0x9000,  0x4000
 otadata,  data, ota,     0xd000,  0x2000
 phy_init, data, phy,     0xf000,  0x1000
-launcher, app,  factory, 0x10000,  1984K
+launcher, app,  factory, 0x10000, 0x200000

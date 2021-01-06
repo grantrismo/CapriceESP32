@@ -22,7 +22,6 @@
 #include <settings.h>
 #include <audio.h>
 
-
 #include "./common/types.h"
 #include "./NativeCPC/include/Native_CPC.h"
 #include "CPC.h"
@@ -37,9 +36,12 @@
 #include "freertos/queue.h"
 #include "esp_task_wdt.h"
 #include "soc/periph_defs.h"
+#include "a2dp.h"
+#include "ringbuf.h"
 
 #else
 #include <sys/time.h>
+#include <SDL2/SDL.h>
 #endif
 
 #define errNone                       0x0000  // No error
@@ -67,6 +69,13 @@
     battery_init();
     settings_init();
 
+    // get sound Buffer;
+    if (SoundBufferAlloc() != errNone)
+    {
+      printf("Error on getting Sound Buffers\n");
+      continue;
+    }
+
 
     // Setup sdcard and display error message on failure
   	// TODO: Make it nonfatal so user can still browse SPIFFS or so
@@ -76,7 +85,13 @@
       continue;
     }
 
-
+    // try to start BT
+#ifndef SIM
+    //heap_caps_print_heap_info(MALLOC_CAP_8BIT);
+    printf("BT Classic Startup\n");
+    a2dp_service_start(false);
+    //heap_caps_print_heap_info(MALLOC_CAP_8BIT);
+#endif
 
     // Init MiniKeyboard
     if (StartMiniKeyboard() != errNone)
@@ -106,10 +121,6 @@
     // goCPC
     EnableJoystick();
     SystemHalt = 0;
-
-    // Enable Sound
-    if (prefP->SoundEnabled == 1)
-      EnableSound();
 
     return 0;
 
@@ -160,6 +171,7 @@ void app_main_task(void *arg)
   UInt32 TicksPerCycle;
   UInt32 Tstart;
   UInt32 Tacc = 0;
+  UInt32 TickLast;
   UInt32 NextSecond;
   UInt32 NextAutoToggle = 0;
   UInt32 CycleCount = 0;
@@ -193,11 +205,37 @@ void app_main_task(void *arg)
   UInt8 AutoStartStatus = 0;
   UInt8 AutoStartActive = 0;
   tUShort oldSHIFTandCTRLState;
+  float ted_i = 0.0;
+  float ted_p = 0.0;
+  float ted_error = 0.0;
+  Int32 ted_ctr = 0;
 
   TicksPerSecond = SysTicksPerSecond();
   TicksPerCycle = TicksPerSecond / CYCLES_PER_SECOND;
   NextSecond = TimGetTicks() + TicksPerSecond;
   VideoFrameDelay = VideoFrameInitialDelay;
+
+  static char osd_tmp_buf[20];
+
+#ifndef SIM
+  // setup the audio ringbuffer for BT
+  ringbuf_handle_t rb;
+  rb = rb_create(i2s_get_rb_size()*2 ,1);
+
+  if (rb == NULL)
+  {
+    app_shutdown();
+    printf("Error on Init Audio ringbuffer\n");
+    return;
+  }
+  printf("Audio ringbuffer @%p,%p\n",rb,SoundBufferP);
+  a2dp_set_rb_read(rb);
+  audio_set_rb_read(rb);
+
+#endif
+  // Start sound
+  SoundPlay(NativeCPC);
+
 
 #ifdef _PROFILE
   NativeCPC->profileStates=0;
@@ -224,9 +262,7 @@ void app_main_task(void *arg)
         //
         if (prefP->CPCTrueSpeed)
         {
-#ifdef SIM
-          usleep(5000);
-#endif
+
           if (!NextCycle)
           {
             NextCycle = Ticks + TicksPerCycle;
@@ -235,20 +271,15 @@ void app_main_task(void *arg)
           else if ( (Condition == EC_SOUND_BUFFER) &&
                     (prefP->SoundEnabled) ) // Prevent Freeze when sound turned off while Condition = EC_SOUND_BUFFER
           {
-            SoundSamples = SoundPush(NativeCPC);
-            numSoundSamples += SoundSamples;
-            printf("Soundbuffer full %d(%d)\n",SoundSamples, SND_BUFFER_SIZE);
+            //printf("Soundbuffer full %d(%d) -> Reset buffer\n",SoundSamples, NativeCPC->PSG->FilledBufferSize );
+            //SoundBufferReset(NativeCPC);
+
             // Do not allow emulation while sound buffer not entirely read by sound stream callback
-            if (IsBufferRead() == false)
-            {
-              RunEmulation = 0;
-            }
           }
           // CPC True speed limitation
           else if (Condition == EC_CYCLE_COUNT)
           {
-
-            if (Ticks < NextCycle)
+            if (Ticks <= NextCycle)
             {
               // Wait for next true speed step
               RunEmulation = 0;
@@ -258,8 +289,25 @@ void app_main_task(void *arg)
             }
             else
             {
+
+/*#ifdef SIM
+              if ((prefP->SoudRenderer == 1) && (NativeCPC->PSG->snd_enabled == 1) && NativeCPC->PSG->FilledBufferSize>0)
+              {
+              // calculate the PI Control error for frame rate
+                ted_error = (4096.0 - NativeCPC->PSG->FilledBufferSize);
+                ted_p = ted_error * 1e-3;
+                ted_i = ted_i + ted_error * 1e-4;
+                ted_ctr = (Int32)(ted_p + ted_i);
+                if (ted_ctr<-5) {ted_ctr=-5;}
+                if (ted_ctr>5) {ted_ctr=5;}
+                printf("TED %d,%d\n", NativeCPC->PSG->FilledBufferSize, ted_ctr);
+
+              }
+
+#endif*/
+
               // Maintain true speed steps
-              NextCycle += TicksPerCycle;
+              NextCycle += TicksPerCycle - ted_ctr;
 #ifdef PATCH_CPC_TRUE_SPEED
               LongCycleCount++;
 
@@ -324,7 +372,7 @@ void app_main_task(void *arg)
             tCRTC* CRTC = NativeCPC->CRTC;
 
             // do we have new samples
-            numSoundSamples += SoundPush(NativeCPC);
+            //numSoundSamples += SoundRender(NULL, 0);
 
             if (!CRTC->stop_rendering)
             {
@@ -347,6 +395,7 @@ void app_main_task(void *arg)
               // swap fram buffer
               //FlipAndCommitFrameBuffer();
               // Transfer offscreen to draw window
+              ttgui_osdExecute();
               display_update();
             }
             if (!VideoFrameDelay)
@@ -371,13 +420,44 @@ void app_main_task(void *arg)
             //printf("******************** Cycle Complete %p\n",NativeCPC->BmpOffScreenBits);
 
             // Push the Sound Buffer
+            //PSG->pbSndBuffer = (tUChar*)&SoundBufferP[SoundBufferCurrent][0];
+            //PSG->pbSndBufferEnd = PSG->pbSndBuffer + SND_BUFFER_SIZE;
+#ifdef SIM
             numSoundSamples += SoundPush(NativeCPC);
+#else
+            tPSG* PSG = NativeCPC->PSG;
+            int bytes_moved = rb_write(rb, PSG->pbSndBuffer, PSG->FilledBufferSize , 0);
+
+            //printf("S:P:%d,%d\n",bytes_moved, PSG->FilledBufferSize);
+            numSoundSamples += bytes_moved;
+            if (bytes_moved != PSG->FilledBufferSize)
+             {
+                printf("rb overflow %d, %d\n",bytes_moved, PSG->FilledBufferSize);
+                SoundBufferReset(NativeCPC);
+                rb_reset(rb);
+              }
+            else
+            {
+              PSG->FilledBufferSize = 0;
+              PSG->snd_bufferptr = PSG->pbSndBuffer;
+            }
+
+            if (prefP->SoundRenderer == 0)
+            {
+              audio_submit();
+            }
+
+#endif
+
+
 
             CycleCount++;
             //-----
             // Next Second reports
             //-----
-
+#ifdef SIM
+            SDL_Delay(5);
+#endif
             if (Ticks >= NextSecond)
             {
               Percentage = !DisplayEmuSpeed ? 0 : CycleCount * 100 / CYCLES_PER_SECOND;
@@ -535,36 +615,37 @@ void app_main_task(void *arg)
     //
     // Events management
     //
-    CurrentKeyState = KeyCurrentState();
-
-    // Keypad Input to be handled on the virtual Keyboard
-    if (NewRockerAttach == RockerAsVirtualKeyboard)
+    if ((ttgui_getOsdState() & TTGUI_OSD_BLOCKKEYS) == 0)
     {
-      if ((CurrentKeyState & KEYPAD_MENU) == 0)
+      CurrentKeyState = KeyCurrentState();
+
+      // Keypad Input to be handled on the virtual Keyboard
+      if (NewRockerAttach == RockerAsVirtualKeyboard)
       {
-        CPCHandleEvent(&event);
-      }
-    }
-
-    // Manage how the Rocker (LRUD-FIRE) is used
-    RockerAttachManager(CurrentKeyState, &oldAttachKeyState);
-
-
-    // Handle Menu Events
-    if (NewRockerAttach == RockerAsMenuControl)
-    {
-      if (ttgui_windowManager(&event) == TTGUI_NEEDGUIUPDATE)
+        if ((CurrentKeyState & KEYPAD_MENU) == 0)
         {
-          printf("ttgui_update request received\n");
-          display_update();
+          CPCHandleEvent(&event);
         }
+      }
+
+      // Manage how the Rocker (LRUD-FIRE) is used
+      RockerAttachManager(CurrentKeyState, &oldAttachKeyState);
+
+
+      // Handle Menu Events
+      if (NewRockerAttach == RockerAsMenuControl)
+      {
+        if (ttgui_windowManager(&event) == TTGUI_NEEDGUIUPDATE)
+          {
+            display_update();
+          }
+      }
     }
 
 
     // Handle Caprice callback events
     if (event.type == EVENT_TYPE_CAPRICE)
     {
-      printf("Caprice Callback Event received\n");
       BufferToWrite = 0;
       if (event.caprice.event == CapriceEventKeyboardRedraw)
       {
@@ -572,23 +653,82 @@ void app_main_task(void *arg)
         display_update();
       }
 
-      if (event.caprice.event == CapriceEventMenuRedraw)
+      else if (event.caprice.event == CapriceEventMenuRedraw)
       {
+
+#ifndef SIM
         // let previous rendering finish within 35ms
+        a2dp_set_emu_state_idle();
         vTaskDelay(35);
+#endif
 
         // call the ttgui and swow it
         ttgui_setup();
         display_update();
       }
 
-      if (event.caprice.event == CapriceEventAboutRedraw)
+      else if (event.caprice.event == CapriceEventRestartAudioPipe)
       {
-        BufferToWrite = 0;
-        //ttgui_about();
-        //display_update();
-        EmulatorUnfreeze();
+        ttgui_osdStop();
       }
+      else if (event.caprice.event == CapriceEventTimerEvent)
+      {
+        if (ttgui_osdManager(&event) == TTGUI_NEEDGUIUPDATE)
+          {
+            display_update();
+          }
+      }
+      else if (event.caprice.event == CapriceEventVolumeOkEvent)
+      {
+          sprintf(osd_tmp_buf, "%c %d%%",0x1D, audio_volume_get());
+          ttgui_osdRegister(osd_tmp_buf, 1000);
+      }
+      else if (event.caprice.event == CapriceEventVolumeFailEvent)
+      {
+          sprintf(osd_tmp_buf, "%c N/A",0x1D);
+          ttgui_osdRegister(osd_tmp_buf, 1000);
+      }
+      else if (event.caprice.event == CapriceEventBattery10Event)
+      {
+          static BatteryInfo battery_info;
+          if (battery_read(&battery_info) == 0)
+          {
+            sprintf(osd_tmp_buf, "Bat: %d%%",battery_info.percentage + 1);
+            ttgui_osdRegister(osd_tmp_buf, 1000);
+          }
+      }
+    }
+    else if (event.type == EVENT_TYPE_A2DP)
+    {
+        switch(event.a2dp.event)
+        {
+          case A2dpEventDeviceConnected:
+            ttgui_osdString("BT Paired", 1000, SystemHalt);
+            break;
+          case A2dpEventDeviceUnconnected:
+            ttgui_osdString("BT Unpaird", 1000, SystemHalt);
+            break;
+          case A2dpEventMediaStarted:
+            ttgui_osdString("BT Ready", 1000, SystemHalt);
+            ttgui_osdTermTimer();
+            prefP->A2dpMediaStates = a2dp_get_states();
+            if (prefP->A2dpMediaStates & 0x01)
+            {
+              prefP->SoundRenderer = 1;
+              SoundBufferReset(NativeCPC);
+              rb_reset(rb);
+              i2s_set_emu_state_idle();
+              a2dp_set_emu_state_running();
+            }
+            break;
+          case A2dpEventMediaStopped:
+            ttgui_osdString("BT Stopped", 1000, SystemHalt);
+            break;
+
+          default:
+            break;
+        }
+        display_update();
     }
 
     // handle SDL update events

@@ -31,6 +31,7 @@
 #include "Prefs.h"
 #include "trace.h"
 #include "vfsfile.h"
+#include "minIni.h"
 
 //===================
 // PATCH begin
@@ -995,6 +996,64 @@ UInt16  ReadDiskCatalogue(tDriveEnum drive, tUChar User, char** CatP, tNativeCPC
   return DiskOperationP->NbCatalogueEntries;
 }
 /***********************************************************************/
+
+Err LoadKeymapFromConfigFile(tDrive* nativedriveP, const char* Key, char** Settings)
+/***********************************************************************
+ *
+ *  LoadKeymapFromConfigFile
+ *
+ ***********************************************************************/
+{
+  char* filenameP;
+  char* fullfilenameP;
+  char* extP;
+  Err Result;
+  static char LocalSettings[16];
+
+  if (IsDriveFilenameExist(nativedriveP) == cFalse)
+    return (errBadName);
+
+  fullfilenameP = (char*)MemPtrNew(PATHNAME_MAXSIZE + SIZETAB_FILENAME + 1);
+  if (fullfilenameP == NULL)
+    return (memErrNotEnoughSpace);
+
+  filenameP = (char*)MemPtrNew(MAX_FILE_NAME * sizeof(Char));
+  if (filenameP == NULL)
+  {
+    free(fullfilenameP);
+    return (memErrNotEnoughSpace);
+  }
+
+  GetDriveFilename(nativedriveP, filenameP);
+
+  extP = strrchr(filenameP,'.');
+  strcpy(extP,KEYMAPPING_EXTENSION);
+
+  strcpy(fullfilenameP, DEFAULT_KEYMAPPING_PATH);
+  strcat(fullfilenameP, filenameP);
+  //printf("Looking for Keymap file: %s\n",fullfilenameP);
+
+  //int   ini_gets(const mTCHAR *Section, const mTCHAR *Key, const mTCHAR *DefValue, mTCHAR *Buffer, int BufferSize, const mTCHAR *Filename);
+  Result = ini_gets("KEYMAPPING", Key, "", LocalSettings, 16, fullfilenameP);
+
+  free (fullfilenameP);
+  free (filenameP);
+
+  if (Result)
+  {
+    //printf("Success: %s\n",LocalSettings);
+    *Settings = LocalSettings;
+    return (errNone);
+  }
+  else
+  {
+    //printf("Fail\n");
+    *Settings = NULL;
+    return (errBadName);
+  }
+}
+
+
 
 Err SaveDiskImage(const char* pathP,
                   tDrive* nativedriveP,

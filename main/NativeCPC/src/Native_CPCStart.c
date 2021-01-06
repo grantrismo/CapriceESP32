@@ -553,7 +553,7 @@ static void audio_init(tNativeCPC* NativeCPC)
 
   // Initializes Sound buffer pointers
 #ifdef __NEWMEMLAYOUT__
-  PSG->pbSndBuffer = (tUChar*)&SoundBufferP[0][0];
+  PSG->pbSndBuffer = (tUChar*)SoundBufferP[0];
 #else
   PSG->pbSndBuffer = (tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_SND_BUFFER);
 #endif

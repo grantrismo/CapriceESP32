@@ -29,6 +29,8 @@
 #define DEFAULT_PREF_CPCTRUESPEED         1 // Full speed
 #define DEFAULT_PREF_SCREENINTENSITY      10
 #define DEFAULT_PREF_SOUNDENABLED         1
+#define DEFAULT_PREF_SOUNDRENDERER        0   // 0 = internal Speaker, 1 = Bluetooth A2DP
+#define DEFAULT_PREF_MEDIASTATES          0   // Holds the actual A2DP Meadia States
 #define DEFAULT_PREF_SOUNDVOLUME          20  // in percetage of full scale
 #define DEFAULT_PREF_SOUNDSYSTEMVOLUME    1   // 0 = Own volume, 1 = System games volume (default)
 #define DEFAULT_PREF_DISPLAY320X480       0   // 0 = 320x320 (default), 1 = 320x480
@@ -99,6 +101,8 @@ prefP->ScreenIntensity = DEFAULT_PREF_SCREENINTENSITY;
 prefP->SoundEnabled = DEFAULT_PREF_SOUNDENABLED;
 prefP->SoundVolume = DEFAULT_PREF_SOUNDVOLUME;
 prefP->SoundSystemVolume = DEFAULT_PREF_SOUNDSYSTEMVOLUME;
+prefP->SoundRenderer = DEFAULT_PREF_SOUNDRENDERER;
+prefP->A2dpMediaStates = DEFAULT_PREF_MEDIASTATES; 
 prefP->Display320x480 = DEFAULT_PREF_DISPLAY320X480;
 prefP->AutomaticContextSave = DEFAULT_PREF_AUTOCONTEXTSAVE;
 prefP->CustomColorUse = DEFAULT_PREF_CUSTOMCOLORUSE;

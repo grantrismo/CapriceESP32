@@ -22,11 +22,147 @@
 #include <dirent.h>
 #include <errno.h>
 
+#include "display.h"
 #include "types.h"
 #include "vfsfile.h"
 
 #define errNone                       0x0000  // No error
 //typedef FILE                FileRef;
+
+/************************************************************************************/
+// ODRIOD I2S SDCARD Wrapper
+/************************************************************************************/
+#ifndef SIM
+int openfiles = 0;
+FILE* _fopen(const char *__restrict _name, const char *__restrict _type)
+{
+
+    STOP_DISPLAY_FUNCTION();
+    FILE* f = fopen(_name, _type);
+    RESUME_DISPLAY_FUNCTION();
+    //printf("fopen: %s (%s) %p\n", buffer, _type, f);
+    if (f)openfiles++;
+    //printf("open files: %d (%d)\n",openfiles,f);
+
+    return f;
+
+}
+int _fclose(FILE* file)
+{
+
+    STOP_DISPLAY_FUNCTION();
+    fflush(file);
+    int res =  fclose(file);
+    RESUME_DISPLAY_FUNCTION();
+    if (!res)openfiles--;
+    //printf("open files: %d\n",openfiles );
+    return res;
+}
+
+DIR* _opendir(const char* name)
+{
+    STOP_DISPLAY_FUNCTION();
+    DIR* d = opendir(name);
+    RESUME_DISPLAY_FUNCTION();
+    return d;
+
+}
+
+struct dirent* _readdir(DIR* pdir)
+{
+    STOP_DISPLAY_FUNCTION();
+    struct dirent* r = readdir(pdir);
+    RESUME_DISPLAY_FUNCTION();
+    return r;
+}
+
+int _closedir(DIR* f)
+{
+    int res;
+    STOP_DISPLAY_FUNCTION();
+    res = closedir(f);
+    RESUME_DISPLAY_FUNCTION();
+    return res;
+}
+
+int _fseek(FILE * f, long a, int b)
+{
+    STOP_DISPLAY_FUNCTION();
+    int ret = fseek(f, a, b);
+    RESUME_DISPLAY_FUNCTION();
+    return ret;
+}
+
+long _ftell( FILE * f)
+{
+    STOP_DISPLAY_FUNCTION();
+    long r = ftell(f);
+    RESUME_DISPLAY_FUNCTION();
+    return r;
+}
+
+size_t _fread(_PTR __restrict p, size_t _size, size_t _n, FILE *__restrict f)
+{
+
+    size_t s;
+    STOP_DISPLAY_FUNCTION();
+    s= fread(p, _size, _n, f);
+    RESUME_DISPLAY_FUNCTION();
+    return s;
+    /*size_t size = _size*_n;
+    size_t readed = 0;
+    for (int i = 0; i < size; i+=0x100) {
+        int toRead = 0x100;
+        if (i + 0x100 > size) toRead = size%0x100;
+        STOP_DISPLAY_FUNCTION();
+        size_t r =fread(p+readed, toRead, 1, f);
+        RESUME_DISPLAY_FUNCTION();
+        if (r == 1) readed += toRead;
+        if (r == 0) break;
+
+    }
+
+    return _n;*/
+}
+
+char * _fgets(char *__restrict c, int i, FILE *__restrict f)
+{
+    STOP_DISPLAY_FUNCTION();
+    char * res = fgets(c, i, f);
+    RESUME_DISPLAY_FUNCTION();
+    return res;
+}
+
+int _fputs(const char *__restrict c, FILE *__restrict f)
+{
+    STOP_DISPLAY_FUNCTION();
+    int res = fputs(c,f);
+    RESUME_DISPLAY_FUNCTION();
+    return res;
+}
+
+
+int _remove(const char * f)
+{
+    int res;
+    STOP_DISPLAY_FUNCTION();
+    res = remove(f);
+    RESUME_DISPLAY_FUNCTION();
+    return res;
+}
+
+int _rename(const char * f, const char * nf)
+{
+    int res;
+    STOP_DISPLAY_FUNCTION();
+    res = rename(f, nf);
+    RESUME_DISPLAY_FUNCTION();
+    return res;
+}
+#endif
+/************************************************************************************/
+// CAPRICE VFS Wrapper
+/************************************************************************************/
 
 Err VFSVolumeEnumerate(UInt16 *volRefNumP, UInt32 *volIteratorP)
 {
@@ -48,38 +184,38 @@ Err VFSFileOpen(UInt16 volRefNum, const char *pathNameP, UInt16 openMode, FileRe
   switch (openMode)
   {
     case vfsModeExclusive:	// don't let anyone else open it
-    *fileRefP = fopen(pathNameP, "rb");
+    *fileRefP = _fopen(pathNameP, "rb");
     break;
 
     case vfsModeRead:		  	// open for read access
-    *fileRefP = fopen(pathNameP, "rb");
+    *fileRefP = _fopen(pathNameP, "rb");
     break;
 
     case vfsModeWrite:			// open for write access, implies exclusive
-    *fileRefP = fopen(pathNameP, "wb");
+    *fileRefP = _fopen(pathNameP, "wb");
     break;
 
     case vfsModeCreate:				// / create the file if it doesn't already exist.  Implemented in VFS layer, no FS lib call will ever have to handle this.
-    *fileRefP = fopen(pathNameP, "wb");
+    *fileRefP = _fopen(pathNameP, "wb");
     break;
 
     case vfsModeTruncate:		 // Truncate file to 0 bytes after opening, removing all existing data.  Implemented in VFS layer, no FS lib call will ever have to handle this.
-    *fileRefP = fopen(pathNameP, "wb");
+    *fileRefP = _fopen(pathNameP, "wb");
     break;
 
     case vfsModeReadWrite:	   // open for read/write access
-    *fileRefP = fopen(pathNameP, "wb+");
+    *fileRefP = _fopen(pathNameP, "wb+");
     break;
 
     case vfsModeLeaveOpen: 	 // Leave the file open even if when the foreground task closes
-    *fileRefP = fopen(pathNameP, "wb+");
+    *fileRefP = _fopen(pathNameP, "wb+");
     break;
 
     case vfsModeDirExist:
-      dir = opendir(pathNameP);
+      dir = _opendir(pathNameP);
       if (dir) {
           /* Directory exists. */
-          closedir(dir);
+          _closedir(dir);
           *fileRefP = NULL;
           return errNone;
       } else if (ENOENT == errno) {
@@ -100,7 +236,7 @@ Err VFSFileOpen(UInt16 volRefNum, const char *pathNameP, UInt16 openMode, FileRe
 Err VFSFileClose(FileRef fileRef)
 {
   if (fileRef!=NULL)
-    fclose(fileRef);
+    _fclose(fileRef);
   return errNone;
 }
 /************************************************************************************/
@@ -128,9 +264,9 @@ Err VFSFileCreate(UInt16 volRefNum, const char *pathNameP)
 Err VFSFileSize(FileRef fileRef, UInt32 *fileSizeP)
 {
   /*Move file point at the end of file.*/
-  fseek(fileRef,0,SEEK_END);
-  *fileSizeP=ftell(fileRef);
-  fseek(fileRef, 0, SEEK_SET);
+  _fseek(fileRef,0,SEEK_END);
+  *fileSizeP=_ftell(fileRef);
+  _fseek(fileRef, 0, SEEK_SET);
   printf("VFSFileSize: %d\n",*fileSizeP);
   return errNone;
 }
@@ -138,7 +274,7 @@ Err VFSFileSize(FileRef fileRef, UInt32 *fileSizeP)
 /************************************************************************************/
 Err VFSFileRead(FileRef fileRef, UInt32 numBytes, void *bufP, UInt32 *numBytesReadP)
 {
-  *numBytesReadP = fread(bufP, 1, numBytes, fileRef);
+  *numBytesReadP = _fread(bufP, 1, numBytes, fileRef);
 
   printf("VFSFileRead: %d %d %p\n",*numBytesReadP,numBytes,fileRef );
   return errNone;

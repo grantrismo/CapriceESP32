@@ -9,4 +9,4 @@
 
 COMPONENT_ADD_INCLUDEDIRS = include
 COMPONENT_SRCDIRS = src
-CFLAGS := -O2 -mlongcalls -Wno-error -Wstrict-aliasing
+CFLAGS := -O3 -mlongcalls -Wno-error -Wstrict-aliasing

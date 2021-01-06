@@ -1,2 +1,2 @@
-COMPONENT_PRIV_INCLUDEDIRS := common rsc CPC hardware NativeCPC
-CFLAGS := -Ofast -mlongcalls -Wno-error -Wstrict-aliasing
+COMPONENT_PRIV_INCLUDEDIRS := common rsc minIni CPC hardware NativeCPC
+CFLAGS := -O3 -mlongcalls -Wno-error -Wstrict-aliasing

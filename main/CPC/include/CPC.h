@@ -86,9 +86,12 @@ extern void CPCPushEvent(const CapriceEvent caprice_event);
 extern Boolean CPCHandleEvent(event_t* Event);
 extern Err CPCLoadDiskImage(char* PathnameP, char* FilenameP);
 extern UInt16 CPCLoadDiskAndGetCatalog(char* PathnameP, char* FilenameP, char** Cat);
+extern Err CPCLoadKeymapFromConfigFile(const char* Key, char** Settings);
 extern tVoid CPCPoke(tULong addr, tULong val);
 extern tUChar CPCPeek(tULong addr);
 extern void AppStop(void);
+extern Int32 SoundRender(UInt8 *data, Int32 len);
+extern Err CPCSwitchAudio(UInt8 SinkId);
 
 //extern void SetRenderingParameters(tUChar Rendering);
 

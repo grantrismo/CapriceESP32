@@ -7,16 +7,24 @@
 #include "trace.h"
 
 #include "Keyboard.h"
+#include "Prefs.h"
 #include "ttgui.h"
 #include "cheat.h"
+#include "a2dp.h"
+#include "vfsfile.h"
 
-#define NUM_TOTAL_PANELS 					(3) // for general allocation
+#ifndef SIM
+#include "esp_heap_caps.h"
+#endif
+
+#define NUM_TOTAL_PANELS 					(4) // for general allocation
 #define NUM_MENU_PANELS						(3) // part of the context setting menu
-#define NUM_TOTAL_OPTIONS         (2) // number of total options/preferences to choose from
+#define NUM_TOTAL_OPTIONS         (4) // number of total options/preferences to choose from
 
 #define PANEL_GAME_ID 						(0)
 #define PANEL_AUTOSTART_ID 				(1)
 #define PANEL_SETTINGS_ID 				(2)
+#define PANEL_MODAL_ID            (3)
 
 #undef DUAL_BUFFER_CONFIG
 //#define DUAL_BUFFER_CONFIG
@@ -24,43 +32,75 @@
 const ttgui_pn_obj pn_obj_setup[NUM_TOTAL_PANELS] = {
 	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Select Game"        , 0  ,0  ,159,119,12,1,19,0}, // SDCARD selector pannel
 	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Select Autostart"   , 0  ,161,159,119,12,1,19,0}, // CAT selector pannel
-	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Preferences (V0.71)", 121,0  ,320,119,12,2,19,0}, // SETTINGS selector panel
+	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Preferences (V0.79)", 121,0  ,320,119,12,2,19,0}, // SETTINGS selector panel
+	{0,3,3,3,3,NULL,0,NULL,NULL,NULL,"Modal              ", 60 ,80 ,159,119,12,1,19,0}, // MODAL selector panel
 };
 
 // caller prototypes
 static void ttgui_otobj_change_cheat();
 static void ttgui_otobj_change_sound();
+static void ttgui_otobj_change_bt();
+static void ttgui_osdobj_update_bt_candidates();
+static void ttgui_txobj_connect_to_peer();
+static void ttgui_otobj_change_audio();
+static void ttgui_check_peer_status();
 
 // Option Test, Possible Selections, inital selection index, max number of selections
 const ttgui_ot_obj ot_obj_setup[NUM_TOTAL_OPTIONS] = {
 	{TTGUI_OT_GAME, 0, ttgui_otobj_change_cheat, "Cheat: ", {2, (char*[]){"off","on"}}},
 	{TTGUI_OT_PREFS, 0, ttgui_otobj_change_sound, "Sound: ", {2, (char*[]){"on","off"}}},
+	{TTGUI_OT_BT, 0, ttgui_otobj_change_bt, "BT Audio: ", {3, (char*[]){"unpaired","pairing","paired"}}},
+	{TTGUI_OT_AUDIO, 0, ttgui_otobj_change_audio, "Driver: ", {2, (char*[]){"Speaker","Bluetooth"}}},
 };
 
 // globals
 ttgui_hd_obj* hd_obj = NULL;
 ttgui_pn_obj* pn_obj = NULL;
 ttgui_tx_obj* tx_obj = NULL;
+ttgui_tx_obj* tx_obj_tmp = NULL;
+ttgui_pn_obj* pn_obj_tmp = NULL;
 ttgui_ot_obj* ot_obj = NULL;
+ttgui_osd_obj osd_obj;
+ttgui_clip_obj* panel_clip = NULL;
+char curr_dir[256] = "../games";
+char next_dir[256] = "\0";
 
 static uint32_t oldMenuKeyState = 0;
 static char** currentDirFileList = NULL;
 static char*  currentCatFileList = NULL;
 static char*  currentCatFilename = NULL;
 static uint16_t currentDirFileCount = 0;
-static char curr_dir[256] = "../games";
-static char next_dir[256] = "\0";
-
 
 // prototypes
 static void ttgui_createPanel();
 static ttgui_err ttgui_appendTxObj(const char* text,const void* func_call);
-static void ttgui_updateTxObj(ttgui_style color_style);
 static void ttgui_drawPanelText();
 static void ttgui_drawPanelRect();
 static void ttgui_fillPanelRect();
 static void ttgui_clearPanelArea();
 static void ttgui_clearBg();
+static void ttgui_free();
+
+static ttgui_err ttgui_malloc(uint32_t size, void **new_ptr);
+
+// clipboard
+static ttgui_clip_obj* ttgui_clip_create();
+static void ttgui_clip_free(ttgui_clip_obj* clip_obj);
+static void ttgui_clip_new(ttgui_clip_obj* clip_obj, uint16_t top, uint16_t left, uint16_t width, uint16_t height);
+static void ttgui_clip_reset(ttgui_clip_obj* clip_obj);
+static void ttgui_clip_destroy(ttgui_clip_obj* clip_obj);
+static void ttgui_clip_copy(ttgui_clip_obj* clip_obj);
+static void ttgui_clip_paste(ttgui_clip_obj* clip_obj);
+
+// osd
+static void ttgui_osd_init();
+static void ttgui_osd_free();
+static void ttgui_osd_restore();
+static void ttgui_osd_timer(uint16_t start, uint16_t tickms, const void* func_call, bool blockkeys);
+static void ttgui_osd_timer_next();
+static void ttgui_osd_master_text(const char* String, ttgui_font_style Style);
+static void ttgui_osd_center_text(const char* String, uint16_t tickms, const void* func_call);
+static void ttgui_osd_calc_size(const char* String, ttgui_font_style Style, uint16_t* width, uint16_t* height);
 
 // on_event_callers
 static void ttgui_open_game_dir();
@@ -70,21 +110,546 @@ static void ttgui_txobj_lose_focus();
 static void ttgui_txobj_get_focus();
 static void ttgui_txobj_load_cat();
 static void ttgui_txobj_cpc_autostart();
+static void ttgui_txobj_update_by_type(ttgui_ot_type c_type, uint16_t index);
 
 static void ttgui_otobj_options_setup();
-static void ttgui_otobj_update_txobj();
+static void ttgui_otobj_update_txobj(bool do_highlight);
 static void ttgui_otobj_reset_game();
+static uint16_t ttgui_otobj_update_defaults(ttgui_ot_type type, uint16_t current);
 
 // helpers
 static int ttgui_files_get(const char* path, const char* extension, char*** filesOut);
-static int ttgui_get_all_filenames();
 static void ttgui_files_free(char** files, int count);
 
 // Basic GFX functions
+static void ttgui_panel_getparent();
+static void ttgui_panel_setid(int32_t PanelId);
 static void ttgui_drawHLine(uint16_t x1, uint16_t y1, uint16_t x2);
 static void ttgui_drawVLine(uint16_t x1, uint16_t y1, uint16_t y2);
 static void ttgui_fillRect(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2, uint8_t inv);
+static void ttgui_drawRect(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2);
 static void ttgui_drawChars(const char* String, uint16_t Left, uint16_t Top, uint8_t Inverse);
+static void ttgui_drawCharsEx(const char* String, uint16_t Left, uint16_t Top, uint8_t Inverse, ttgui_font_style Style);
+
+// Code
+ttgui_err ttgui_malloc(uint32_t size, void **new_ptr)
+/***********************************************************************
+ *
+ *  ttgui_malloc
+ *
+ ***********************************************************************/
+{
+#ifdef SIM
+	  *new_ptr = malloc(size);
+#else
+	  *new_ptr = heap_caps_malloc(size,  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#endif
+
+	  if (*new_ptr == NULL) return TTGUI_NOMEM;
+
+	  return TTGUI_ERRNONE;
+}
+
+void ttgui_free()
+/***********************************************************************
+ *
+ *  ttgui_free
+ *
+ ***********************************************************************/
+{
+		ttgui_osd_free();
+}
+
+/**********************************************
+*
+*	O S D
+*
+**********************************************/
+
+
+
+
+void ttgui_osd_init()
+/**********************************************
+*
+*	ttgui_osd_init()
+*
+**********************************************/
+{
+	osd_obj.state = TTGUI_OSD_IDLE;
+	osd_obj.tickms = 0;
+	osd_obj.timer_value = 0;
+	osd_obj.style = TTGUI_FONT_BOLT2x3x1;
+	osd_obj.string_text = NULL;
+	strcpy(osd_obj.string_value,"\0");
+	osd_obj.clip_obj = ttgui_clip_create();
+	osd_obj.on_update_caller = NULL;
+}
+
+void ttgui_osd_free()
+/**********************************************
+*
+*	ttgui_osd_init()
+*
+**********************************************/
+{
+	ttgui_clip_free(osd_obj.clip_obj);
+}
+
+void ttgui_osdExecute()
+/**********************************************
+*
+*	ttgui_osd_init()
+*
+**********************************************/
+{
+	if (osd_obj.state != TTGUI_OSD_REGISTERED)
+		return;
+
+	ttgui_osd_master_text(osd_obj.string_osd, osd_obj.style);
+}
+
+ttgui_err ttgui_osdString(const char* String, uint16_t tickms, uint8_t IsMenu)
+/**********************************************
+*
+*	tttgui_osdString
+*
+**********************************************/
+{
+		if (IsMenu == 1)
+			return (ttgui_osdMenu(String, tickms));
+		else
+			return (ttgui_osdRegister(String, tickms));
+}
+
+
+ttgui_err ttgui_osdRegister(const char* String, uint16_t tickms)
+/**********************************************
+*
+*	ttgui_osdRegister
+*
+**********************************************/
+{
+	if (osd_obj.state == TTGUI_OSD_IDLE)
+	{
+		osd_obj.state = TTGUI_OSD_REGISTERED;
+		osd_obj.tickms = tickms;
+		strcpy(osd_obj.string_osd, String);
+		osd_obj.on_update_caller = NULL;
+		timer_event_start(osd_obj.tickms);
+		return (TTGUI_ERRNONE);
+	}
+	else if (osd_obj.state == TTGUI_OSD_REGISTERED)
+	{
+		strcpy(osd_obj.string_osd, String);
+		timer_event_reset(osd_obj.tickms);
+		return (TTGUI_ERRNONE);
+	}
+
+	else
+		return (TTGUI_OSDBUSY);
+}
+
+ttgui_err ttgui_osdMenu(const char* String, uint16_t tickms)
+/**********************************************
+*
+*	ttgui_osdMenu
+*
+**********************************************/
+{
+	if (osd_obj.state == TTGUI_OSD_IDLE)
+	{
+		ttgui_osd_center_text(String, tickms, NULL);
+		return (TTGUI_NEEDGUIUPDATE);
+	}
+	else if ((osd_obj.state & TTGUI_OSD_TIMER) == TTGUI_OSD_TIMER)
+	{
+			osd_obj.state |= TTGUI_OSD_TIMEROSD;
+			strcpy(osd_obj.string_osd, String);
+	}
+	return (TTGUI_OSDBUSY);
+}
+
+ttgui_osd_state ttgui_getOsdState(void)
+/**********************************************
+*
+*	ttgui_getOsdState()
+*
+**********************************************/
+{
+	return (osd_obj.state);
+}
+
+void ttgui_osdTermTimer()
+/**********************************************
+*
+*	ttgui_osdTermTime()
+*
+**********************************************/
+{
+	if ((osd_obj.state & TTGUI_OSD_TIMER) == TTGUI_OSD_TIMER)
+		osd_obj.state |= TTGUI_OSD_TERMINATE;
+}
+
+
+void ttgui_osd_center_text(const char* String, uint16_t tickms, const void* func_call)
+/**********************************************
+*
+*	ttgui_osd_center_text
+*
+**********************************************/
+{
+	if (osd_obj.state == TTGUI_OSD_IDLE)
+	{
+		osd_obj.state = TTGUI_OSD_ONEHOT;
+		osd_obj.tickms = tickms;
+		osd_obj.string_text = String;
+		osd_obj.on_update_caller = func_call;
+		timer_event_start(osd_obj.tickms);
+		ttgui_osd_master_text(osd_obj.string_text, osd_obj.style);
+	}
+}
+
+void ttgui_osdStop()
+/**********************************************
+*
+*	ttgui_osdStop
+*
+**********************************************/
+{
+	if (osd_obj.state != TTGUI_OSD_IDLE)
+	{
+		timer_event_stop();
+		ttgui_clip_destroy(osd_obj.clip_obj);
+		osd_obj.state = TTGUI_OSD_IDLE;
+	}
+}
+
+void ttgui_osdRestore()
+/**********************************************
+*
+*	ttgui_osdRestore
+*
+**********************************************/
+{
+	ttgui_osd_restore();
+}
+
+
+void ttgui_osd_restore()
+/**********************************************
+*
+*	ttgui_osd_restore
+*
+**********************************************/
+{
+	ttgui_clip_paste(osd_obj.clip_obj);
+	ttgui_clip_destroy(osd_obj.clip_obj);
+	timer_event_stop();
+	osd_obj.state = TTGUI_OSD_IDLE;
+
+	if (osd_obj.on_update_caller != NULL)
+		osd_obj.on_update_caller();
+
+}
+
+void ttgui_osd_timer(uint16_t start, uint16_t tickms, const void* func_call, bool blockkeys)
+/**********************************************
+*
+*	ttgui_osd_timer
+*
+**********************************************/
+{
+	if (osd_obj.state == TTGUI_OSD_IDLE)
+	{
+		osd_obj.state = (blockkeys == true) ? (TTGUI_OSD_TIMER | TTGUI_OSD_BLOCKKEYS) : (TTGUI_OSD_TIMER);
+		osd_obj.tickms = tickms;
+		osd_obj.timer_value = start;
+		osd_obj.on_update_caller = func_call;
+		snprintf(osd_obj.string_value, 8, "%d", osd_obj.timer_value);
+
+		timer_event_start(osd_obj.tickms);
+		ttgui_osd_master_text(osd_obj.string_value, osd_obj.style);
+	}
+}
+
+void ttgui_osd_timer_next()
+/**********************************************
+*
+*	ttgui_osd_timer_next
+*
+**********************************************/
+{
+	if (osd_obj.timer_value > 0)
+	{
+		osd_obj.timer_value--;
+		snprintf(osd_obj.string_value, 8, "%d", osd_obj.timer_value);
+
+		// restore old background
+		ttgui_clip_paste(osd_obj.clip_obj);
+		ttgui_clip_destroy(osd_obj.clip_obj);
+
+		// perform update caller
+		if (osd_obj.on_update_caller != NULL)
+			osd_obj.on_update_caller();
+
+		// next osd text
+		if ((osd_obj.state & TTGUI_OSD_TIMEROSD) == TTGUI_OSD_TIMEROSD)
+		{
+			ttgui_osd_master_text(osd_obj.string_osd, osd_obj.style);
+			osd_obj.state ^= TTGUI_OSD_TIMEROSD;
+		}
+		else
+		{
+			ttgui_osd_master_text(osd_obj.string_value, osd_obj.style);
+		}
+
+		// terminate next time ?
+		if ((osd_obj.state & TTGUI_OSD_TERMINATE) == TTGUI_OSD_TERMINATE)
+		{
+					osd_obj.state ^= TTGUI_OSD_TERMINATE;
+					osd_obj.timer_value = 0;
+		}
+	}
+	else
+	{
+		ttgui_osd_restore();
+	}
+}
+
+void ttgui_osd_master_text(const char* String, ttgui_font_style Style)
+/**********************************************
+*
+*	ttgui_osd_master_text
+*
+**********************************************/
+{
+	uint16_t m_h = DISPLAY_HEIGHT;
+	uint16_t m_w = hd_obj->frame_buffer->width;
+	uint16_t t_w, t_h, o_h, o_w, x1,x2,y1,y2;
+
+	// get the dimensions of the text
+	ttgui_osd_calc_size(String, Style, &t_w, &t_h);
+	o_h = m_h/2;
+	o_w = m_w/2;
+	t_w = t_w/2;
+	t_h = t_h/2;
+
+	x1 = o_w-t_w-4;
+	x2 = o_h-t_h-4;
+	y1 = o_w+t_w+4;
+	y2 = o_h+t_h+4;
+
+	// create and save the background
+	ttgui_clip_new(osd_obj.clip_obj, x2, x1, y1-x1+1, y2-x2+1);
+	ttgui_clip_copy(osd_obj.clip_obj);
+	// clear the background
+	ttgui_fillRect(x1,x2,y1,y2,0);
+	// draw the double n_frames
+	ttgui_drawRect(x1,x2,y1,y2);
+	ttgui_drawRect(o_w-t_w-2,o_h-t_h-2,o_w+t_w+2,o_h+t_h+2);
+	// draw the text
+	ttgui_drawCharsEx(String, o_w-t_w+1, o_h-t_h+1, 0, Style);
+}
+
+void ttgui_osd_calc_size(const char* String, ttgui_font_style Style, uint16_t* width, uint16_t* height)
+/**********************************************
+*
+*	ttgui_osd_calc_size
+*
+**********************************************/
+{
+	uint16_t text_len = strlen(String);
+	uint8_t p_h, p_w, p_s;
+	uint16_t w,h;
+
+	switch (Style)
+	{
+		case (TTGUI_FONT_BOLT3x3x1):
+			p_w = 3;
+			p_h = 3;
+			p_s = 1;
+			break;
+
+		case (TTGUI_FONT_BOLT2x2x0):
+			p_w = 2;
+			p_h = 1;
+			p_s = 0;
+			break;
+
+		default :
+			p_w = 2;
+			p_h = 3;
+			p_s = 1;
+	}
+
+	w = CPC_KEYBOARD_FONT_WIDTH * (p_w + p_s) * text_len;
+	h = CPC_KEYBOARD_FONT_HEIGHT * (p_h + p_s);
+	*width = w;
+	*height = h;
+}
+
+
+
+/**********************************************
+*
+*	C L I P B O A R D
+*
+**********************************************/
+
+
+
+
+ttgui_clip_obj* ttgui_clip_create()
+/**********************************************
+*
+*	ttgui_clip_create
+*
+**********************************************/
+{
+		ttgui_clip_obj* new_clip_obj;
+		if (ttgui_malloc(sizeof(ttgui_clip_obj), (void**)&new_clip_obj) != TTGUI_ERRNONE)
+			return NULL;
+		else
+		{
+			ttgui_clip_reset(new_clip_obj);
+			return (new_clip_obj);
+		}
+
+}
+
+void ttgui_clip_free(ttgui_clip_obj* clip_obj)
+/**********************************************
+*
+*	ttgui_clip_free
+*
+**********************************************/
+{
+	if (clip_obj != NULL)
+	{
+		if (clip_obj->chunk != NULL)
+			free(clip_obj->chunk);
+
+		free(clip_obj);
+		clip_obj = NULL;
+	}
+
+
+}
+
+void ttgui_clip_reset(ttgui_clip_obj* clip_obj)
+/**********************************************
+*
+*	ttgui_clip_reset
+*
+**********************************************/
+{
+	clip_obj->top = 0;
+	clip_obj->left = 0;
+	clip_obj->width = 0;
+	clip_obj->height = 0;
+	clip_obj->chunk = NULL;
+}
+
+void ttgui_clip_destroy(ttgui_clip_obj* clip_obj)
+/**********************************************
+*
+*	ttgui_clip_destroy
+*
+**********************************************/
+{
+	if (clip_obj->chunk != NULL)
+	{
+		free(clip_obj->chunk);
+		ttgui_clip_reset(clip_obj);
+	}
+}
+
+void ttgui_clip_new(ttgui_clip_obj* clip_obj, uint16_t top, uint16_t left, uint16_t width, uint16_t height)
+/**********************************************
+*
+*	ttgui_clip_alloc
+*
+**********************************************/
+{
+	ttgui_clip_destroy(clip_obj);
+	clip_obj->top = top;
+	clip_obj->left = left;
+	clip_obj->width = width;
+	clip_obj->height = height;
+	ttgui_malloc(width*height, (void **)&clip_obj->chunk);
+}
+
+void ttgui_clip_copy(ttgui_clip_obj* clip_obj)
+/**********************************************
+*
+*	ttgui_clip_copy
+*
+**********************************************/
+{
+	uint16_t m_w = hd_obj->frame_buffer->width;
+	uint8_t* m_dest = NULL;
+	uint8_t* m_src = NULL;
+
+	int x1 = clip_obj->left;
+	int	y1 = clip_obj->top;
+	int y2 = clip_obj->top + clip_obj->height - 1;
+	m_dest  = clip_obj->chunk;
+	m_src = hd_obj->frame_buffer->data[0] + y1 * m_w + x1;
+
+	if (m_dest == NULL)
+	{
+		printf("Copy without memory allocation\n");
+		return;
+	}
+
+	for(int y = y1; y<=y2; y++)
+	{
+		memcpy(m_dest,m_src,clip_obj->width);
+		m_dest += clip_obj->width;
+		m_src += m_w;
+	}
+}
+
+void ttgui_clip_paste(ttgui_clip_obj* clip_obj)
+/**********************************************
+*
+*	ttgui_clip_past
+*
+**********************************************/
+{
+	if (clip_obj->chunk == NULL)
+	{
+		printf("Nothing to clip\n");
+		return;
+	}
+
+	uint16_t m_w = hd_obj->frame_buffer->width;
+	uint8_t* m_dest = NULL;
+	uint8_t* m_src = NULL;
+
+	int x1 = clip_obj->left;
+	int	y1 = clip_obj->top;
+	int y2 = clip_obj->top + clip_obj->height - 1;
+	m_src  = clip_obj->chunk;
+	m_dest = hd_obj->frame_buffer->data[0] + y1 * m_w + x1;
+
+	for(int y = y1; y<=y2; y++)
+	{
+		memcpy(m_dest,m_src,clip_obj->width);
+		m_dest += m_w;
+		m_src += clip_obj->width;
+	}
+}
+
+
+/***********************************************
+*
+*	T T G U I
+*
+**********************************************/
+
+
 
 
 ttgui_err ttgui_PanelConstructor(gbuf_t* frame_buffer, uint16_t frame_width, uint16_t frame_height)
@@ -144,6 +709,9 @@ ttgui_err ttgui_PanelConstructor(gbuf_t* frame_buffer, uint16_t frame_width, uin
 	pn_obj_base[PANEL_GAME_ID].on_update_caller = ttgui_update_game_dir; // setup the sdcard dir structure
 	pn_obj_base[PANEL_SETTINGS_ID].on_access_caller = ttgui_otobj_options_setup; // setup the option configuration
 
+	// reset the osd
+	ttgui_osd_init();
+
 	return (TTGUI_ERRNONE);
 }
 
@@ -193,21 +761,48 @@ void ttgui_PanelDeConstructor()
 
 }
 
+ttgui_err ttgui_osdManager(event_t* event)
+{
+	// check the OSD
+	if ((osd_obj.state & TTGUI_OSD_TIMER) == TTGUI_OSD_TIMER)
+	{
+		ttgui_osd_timer_next();
+		return (TTGUI_NEEDGUIUPDATE);
+	}
+
+	else if (osd_obj.state == TTGUI_OSD_ONEHOT)
+	{
+		ttgui_osd_restore();
+		return (TTGUI_NEEDGUIUPDATE);
+	}
+
+	else if (osd_obj.state == TTGUI_OSD_REGISTERED)
+	{
+			ttgui_osd_restore();
+			return(TTGUI_ERRNONE);
+	}
+	else
+		return(TTGUI_ERRNONE);
+}
+
 ttgui_err ttgui_windowManager(event_t* event)
 {
 
 	uint32_t keyDiff, keyState;
 
+	// check the events
 	keyState = KeyCurrentState();
-  keyDiff = keyState ^ oldMenuKeyState;
-  if (!keyDiff)
-    return(TTGUI_ERRNONE);
-
-  // Save key states
-  oldMenuKeyState = keyState;
-
+	keyDiff = keyState ^ oldMenuKeyState;
 	//printf("ttgui_windowManager: %d, %d, %p\n",keyState, keyDiff, tx_obj);
 
+	// Save key states
+	oldMenuKeyState = keyState;
+
+	// in case some OSDs are active, return
+	if ((!keyDiff) || (osd_obj.state != TTGUI_OSD_IDLE))
+	{
+		return(TTGUI_ERRNONE);
+	}
 
 // Panel Navigation
 	if((keyState & keyBitRockerNextPanelLeft) == keyBitRockerNextPanelLeft )
@@ -360,7 +955,45 @@ ttgui_err ttgui_windowManager(event_t* event)
 	return(TTGUI_NEEDGUIUPDATE);
 }
 
+static void ttgui_panel_setid(int32_t PanelId)
+/**********************************************
+*
+*	ttgui_panel_setid
+*
+**********************************************/
+{
+	pn_obj_tmp = pn_obj;
+	pn_obj = &hd_obj->base_pn_obj[PanelId];
+	if (pn_obj->num_tx_objs > 0)
+		tx_obj = &pn_obj->tx_obj_base[pn_obj-> onfocus_tx_obj_index];
+	else
+		tx_obj = NULL;
+}
+
+static void ttgui_panel_getparent()
+/**********************************************
+*
+*	ttgui_panel_getparent
+*
+**********************************************/
+{
+	if (pn_obj_tmp != NULL)
+	{
+		pn_obj = pn_obj_tmp;
+		if (pn_obj->num_tx_objs > 0)
+			tx_obj = &pn_obj->tx_obj_base[pn_obj-> onfocus_tx_obj_index];
+		else
+			tx_obj = NULL;
+	}
+}
+
+
 static void ttgui_createPanel()
+/**********************************************
+*
+*	ttgui_createPanel
+*
+**********************************************/
 {
 	// background of the panel
 	ttgui_fillPanelRect();
@@ -438,6 +1071,30 @@ static void ttgui_drawVLine(uint16_t x1, uint16_t y1, uint16_t y2)
 		*m_bytes = hd_obj->fg_col_index;
 	}
 }
+
+static void ttgui_drawRect(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2)
+/**********************************************
+*
+*	ttgui_drawRect
+*
+**********************************************/
+{
+	uint16_t m_h = DISPLAY_HEIGHT;
+	uint16_t m_w = hd_obj->frame_buffer->width;
+
+	if ((x1 < x2) && (x1 >= m_w)) return;
+	if ((y1 < y2) && (y1 >= m_h)) return;
+	if (x1 > x2) x1 = 0;
+	if (y1 > y2) y1 = 0;
+	if (x2 >= m_w) x2 = m_w -1;
+	if (y2 >= m_h) y2 = m_h -1;
+
+	ttgui_drawHLine(x1, y1, x2);
+	ttgui_drawHLine(x1, y2, x2);
+	ttgui_drawVLine(x1, y1, y2);
+	ttgui_drawVLine(x2, y1, y2);
+}
+
 
 static void ttgui_drawPanelRect()
 /**********************************************
@@ -611,6 +1268,7 @@ static void ttgui_drawChars(const char* String, uint16_t Left, uint16_t Top, uin
   uint8_t c_string = 0;
 	uint8_t c_bittest;
 	uint16_t m_w = hd_obj->frame_buffer->width;
+	uint8_t* sc_buffer;
 
   for(int j=0; j<strlen(String); j++) {
     c_string = (uint8_t)String[j];
@@ -618,7 +1276,6 @@ static void ttgui_drawChars(const char* String, uint16_t Left, uint16_t Top, uin
       return;
 
 		uint32_t offset = Top*m_w + j*CPC_KEYBOARD_FONT_WIDTH + Left;
-		uint8_t* sc_buffer = hd_obj->frame_buffer->data[0] + offset;
 
     for(int i=0;i<CPC_KEYBOARD_FONT_WIDTH; i++, offset-=(CPC_KEYBOARD_FONT_HEIGHT*m_w - 1)) {
       char charColumn = *(hd_obj->font8x8 + (c_string-CPC_KEYBOARD_FONT_FIRST_CHAR)*CPC_KEYBOARD_FONT_WIDTH + i);
@@ -644,10 +1301,79 @@ static void ttgui_drawChars(const char* String, uint16_t Left, uint16_t Top, uin
   }
 }
 
-static void ttgui_setupPnOnAccessCallee(const void* func)
+
+static void ttgui_drawCharsEx(const char* String, uint16_t Left, uint16_t Top, uint8_t Inverse, ttgui_font_style Style)
+/***********************************************************************
+ *
+ *  drawChars EX
+ *
+ ***********************************************************************/
 {
-		pn_obj -> on_access_caller = func;
+  uint8_t c_string = 0;
+	uint8_t c_bittest;
+	uint16_t m_w = hd_obj->frame_buffer->width;
+	uint32_t p_h,p_w,p_s;
+	uint32_t p_offset;
+	uint8_t* sc_buffer;
+
+	switch (Style)
+	{
+		case (TTGUI_FONT_BOLT3x3x1):
+			p_w = 3;
+			p_h = 3;
+			p_s = 1;
+			break;
+
+		case (TTGUI_FONT_BOLT2x2x0):
+			p_w = 2;
+			p_h = 1;
+			p_s = 0;
+			break;
+
+		default :
+			p_w = 2;
+			p_h = 3;
+			p_s = 1;
+
+	}
+
+  for(int j=0; j<strlen(String); j++) {
+    c_string = (uint8_t)String[j];
+    if (c_string<CPC_KEYBOARD_FONT_FIRST_CHAR)
+      return;
+
+		uint32_t offset = Left + Top*m_w + j*CPC_KEYBOARD_FONT_WIDTH * (p_w + p_s);
+
+    for(int i=0;i<CPC_KEYBOARD_FONT_WIDTH; i++, offset-=(CPC_KEYBOARD_FONT_HEIGHT * (p_h + p_s) * m_w)) {
+      char charColumn = *(hd_obj->font8x8 + (c_string-CPC_KEYBOARD_FONT_FIRST_CHAR)*CPC_KEYBOARD_FONT_WIDTH + i);
+      for (int pos=0;pos<CPC_KEYBOARD_FONT_HEIGHT;pos++,offset+=m_w*(p_h + p_s)) {
+				// get the color
+				c_bittest = ((1<<pos) & charColumn) != 0;
+
+				// inter pixel access
+				for (int m=0; m<p_w; m++) {
+					for (int n=0; n<p_h; n++) {
+						p_offset = offset + m + n * m_w + i * (p_w + p_s);
+				// get the correct frame buffer
+#ifdef DUAL_BUFFER_CONFIG
+						if (p_offset >= hd_obj->frame_buffer->block_len)
+							sc_buffer = hd_obj->frame_buffer->data[1] - hd_obj->frame_buffer->block_len + p_offset;
+						else
+#endif
+							sc_buffer = hd_obj->frame_buffer->data[0] + p_offset;
+
+						// set the pixel
+		        if ( (c_bittest & (!Inverse)) || ((!c_bittest) & Inverse) )
+		          *sc_buffer = hd_obj->fg_col_index;
+		        else
+		          *sc_buffer = hd_obj->bg_col_index;
+					}
+				}
+      }
+    }
+  }
 }
+
 
 static ttgui_err ttgui_appendTxObj(const char* text, const void* func_call)
 /***********************************************************************
@@ -901,7 +1627,6 @@ static void sort_files(char** files, int count)
 *
 ***********************************************************************/
 {
-    bool swapped = true;
 
     if (count > 1)
     {
@@ -925,7 +1650,7 @@ static int ttgui_files_get(const char* path, const char* extension, char*** file
     if (!result) abort();
 
 
-    DIR *dir = opendir(path);
+    DIR *dir = _opendir(path);
     if( dir == NULL )
     {
         printf("opendir failed on %s.\n",path);
@@ -944,7 +1669,7 @@ static int ttgui_files_get(const char* path, const char* extension, char*** file
 
 
     struct dirent *entry;
-    while((entry=readdir(dir)) != NULL)
+    while((entry=_readdir(dir)) != NULL)
     {
         size_t len = strlen(entry->d_name);
 				printf("read entry %s\n", entry->d_name);
@@ -1002,7 +1727,7 @@ static int ttgui_files_get(const char* path, const char* extension, char*** file
         }
     }
 
-    closedir(dir);
+    _closedir(dir);
     free(temp);
 
     sort_files(result, count);
@@ -1096,7 +1821,6 @@ void ttgui_txobj_cpc_autostart(void)
 
 	// Prepare command to execute
   int nbCharOfCommand = 0;
-	tDrive* driveP = NULL;
 
 	if (*(firstValidEntryP) != '|')
 	{
@@ -1132,8 +1856,14 @@ void ttgui_txobj_cpc_autostart(void)
 	// load the disc Image
 	CPCLoadDiskImage(curr_dir, currentCatFilename);
 
+	// (try) to load the special keymapping;
+	EnableSpecialKeymapping();
+
 	// reset all related game options
 	ttgui_otobj_reset_game();
+
+	// OSD display
+	ttgui_osd_center_text("Ready to Go!", 1500, NULL);
 }
 
 void ttgui_otobj_options_setup(void)
@@ -1145,15 +1875,16 @@ void ttgui_otobj_options_setup(void)
 {
 
 	char buf[20]={0};
-	int index;
+	uint16_t index;
 	ttgui_pn_obj* old_pn_obj = pn_obj;
 
-	// move pointer to the autostart panel
+	// move pointer to the autostart panelttgui_txobj_cpc_autostart
 	pn_obj = &hd_obj->base_pn_obj[PANEL_SETTINGS_ID];
 
 	for (int i=0;i<NUM_TOTAL_OPTIONS;i++)
 	{
-		index = ot_obj[i].current;
+		index = ttgui_otobj_update_defaults(ot_obj[i].type, ot_obj[i].current);
+		ot_obj[i].current = index;
 		strcpy(buf,ot_obj[i].text);
 		strcat(buf,ot_obj[i].options.selection[index]);
 		ttgui_appendTxObj(buf, ot_obj[i].on_select_caller);
@@ -1161,6 +1892,33 @@ void ttgui_otobj_options_setup(void)
 	}
 	pn_obj = old_pn_obj;
 
+}
+
+uint16_t ttgui_otobj_update_defaults(ttgui_ot_type type, uint16_t current)
+/***********************************************************************
+*
+* 	 ttgui_otobj_update_defaults
+*
+***********************************************************************/
+{
+	if (type == TTGUI_OT_BT)
+	{
+		if (a2dp_media_is_ready())
+			return (2);
+		else if (a2dp_is_connected())
+			return (1);
+		else
+			return (0);
+	}
+	else if (type == TTGUI_OT_AUDIO)
+	{
+		if (prefP->SoundRenderer == 0)
+			return (0);
+		else
+			return (1);
+	}
+	else
+		return(current);
 }
 
 void ttgui_otobj_reset_game(void)
@@ -1179,7 +1937,38 @@ void ttgui_otobj_reset_game(void)
 	}
 }
 
-void ttgui_otobj_update_txobj(void)
+void ttgui_txobj_update_by_type(ttgui_ot_type c_type, uint16_t index)
+/***********************************************************************
+*
+* 	 ttgui_get_txobj_by_type
+*
+***********************************************************************/
+{
+	tx_obj_tmp = tx_obj;
+	tx_obj = NULL;
+
+	for (int i=0;i<NUM_TOTAL_OPTIONS;i++)
+	{
+		if (ot_obj[i].type == c_type)
+		{
+			if (i <= pn_obj->num_tx_objs)
+			{
+				tx_obj = &pn_obj->tx_obj_base[i];
+			}
+			break;
+		}
+	}
+
+	if (tx_obj != NULL)
+	{
+		uint16_t tx_ot_id = tx_obj-> tx_obj_id;
+		ot_obj[tx_ot_id].current = index;
+		ttgui_otobj_update_txobj(0);
+	}
+	tx_obj = tx_obj_tmp;
+}
+
+void ttgui_otobj_update_txobj(bool do_highlight)
 /***********************************************************************
 *
 * 	 ttgui_otobj_update_txobj
@@ -1188,14 +1977,17 @@ void ttgui_otobj_update_txobj(void)
 {
 		char buf[20]={0};
 		uint16_t i = tx_obj-> tx_obj_id;
-		int index = ot_obj[i].current;
+		uint16_t index = ot_obj[i].current;
 
 		strcpy(buf,ot_obj[i].text);
 		strcat(buf,ot_obj[i].options.selection[index]);
 		strcpy(tx_obj->text, buf);
 
 		// show me
-		ttgui_txobj_get_focus();
+		if (do_highlight)
+			ttgui_txobj_get_focus();
+		else
+			ttgui_txobj_lose_focus();
 }
 
 
@@ -1291,7 +2083,7 @@ void ttgui_otobj_change_cheat(void)
 			} // cheat file valid
 
 			// update the window text
-			ttgui_otobj_update_txobj();
+			ttgui_otobj_update_txobj(1);
 		}
 	}
 
@@ -1330,5 +2122,165 @@ void ttgui_otobj_change_sound(void)
 		}
 	}
 	// update the window text
-	ttgui_otobj_update_txobj();
+	ttgui_otobj_update_txobj(1);
+}
+
+void ttgui_otobj_change_audio()
+/***********************************************************************
+*
+* 	 ttgui_otobj_change_audio
+*
+***********************************************************************/
+{
+	uint16_t tx_ot_id = tx_obj-> tx_obj_id;
+	uint8_t sink_id = 0;
+	if (ot_obj[tx_ot_id].current == 0)
+	{
+		// switch to bluetooth audio
+		if (!a2dp_media_is_ready())
+		{
+				ttgui_osd_center_text("No BT Device", 1000, NULL);
+				return;
+		}
+		sink_id = 1;
+	}
+	else
+	{
+		sink_id = 0;
+
+	}
+	if (CPCSwitchAudio(sink_id) == errNone)
+	{
+				ot_obj[tx_ot_id].current = sink_id;
+				ttgui_otobj_update_txobj(1);
+				ttgui_osd_center_text("OK!", 1000, NULL);
+	}
+	else
+	{
+			ttgui_osd_center_text("Error!", 1000, NULL);
+	}
+}
+
+void ttgui_txobj_connect_to_peer()
+/***********************************************************************
+*
+* 	 ttgui_txobj_connect_to_peer
+*
+***********************************************************************/
+{
+	// try to connect to peer
+	a2dp_service_start_discovery_connect((const char*)tx_obj->text);
+
+	// return to the option window, and set new status
+	ttgui_clip_paste(panel_clip);
+	ttgui_clip_destroy(panel_clip);
+	ttgui_clip_free(panel_clip);
+	ttgui_panel_getparent();
+
+	// update the option stat on connected
+	uint16_t tx_ot_id = tx_obj-> tx_obj_id;
+	ot_obj[tx_ot_id].current = 1;
+	ttgui_otobj_update_txobj(1);
+
+	// start the event track timer, lock keys
+	ttgui_osd_timer(20, 1000, ttgui_check_peer_status, true);
+}
+
+void ttgui_check_peer_status()
+/***********************************************************************
+*
+* 	 ttgui_check_peer_status
+*
+***********************************************************************/
+{
+	if (osd_obj.timer_value == 0)
+	{
+		uint16_t tx_ot_id = tx_obj-> tx_obj_id;
+		ot_obj[tx_ot_id].current = a2dp_media_is_ready() ?  2 : 1;
+		ttgui_otobj_update_txobj(1);
+	}
+}
+
+
+void ttgui_osdobj_update_bt_candidates()
+/***********************************************************************
+*
+* 	 ttgui_osdobj_update_bt_candidates
+*
+***********************************************************************/
+{
+	int max_tx_count = (pn_obj->tx_layout_nc*pn_obj->tx_layout_nr);
+	bt_app_bd_names* peer_names = a2dp_get_peer_canditates();
+
+	// reset the nuber of objects
+	pn_obj->num_tx_objs = 0;
+
+	// move files
+	for (int i=(pn_obj->tx_page_n*max_tx_count);i<peer_names->length;i++)
+	{
+		ttgui_appendTxObj(peer_names->bt_canditates[i], ttgui_txobj_connect_to_peer);
+		if (pn_obj->num_tx_objs >= max_tx_count)
+			 break;
+	}
+
+	// set current tx-object focus
+	if (pn_obj->num_tx_objs)
+	{
+		pn_obj-> onfocus_tx_obj_index = 0;
+		tx_obj = &pn_obj->tx_obj_base[pn_obj-> onfocus_tx_obj_index];
+		tx_obj -> on_access_caller();
+	}
+	else if (osd_obj.state == TTGUI_OSD_IDLE)
+	{
+		// no device found, close the bt discovery window, and return to the object window
+		ttgui_clip_paste(panel_clip);
+		ttgui_clip_destroy(panel_clip);
+		ttgui_clip_free(panel_clip);
+		ttgui_panel_getparent();
+	}
+}
+
+
+void ttgui_otobj_change_bt()
+/***********************************************************************
+*
+* 	 ttgui_otobj_change_bt
+*
+***********************************************************************/
+{
+	const char* title = {"BT Discovery..."};
+
+	if (a2dp_is_connected())
+	{
+		a2dp_service_stop();
+		ttgui_osd_center_text("BT Unpairing", 1000, NULL);
+		printf("Unpairing...\n");
+
+		// clear connect status
+		uint16_t tx_ot_id = tx_obj-> tx_obj_id;
+		ot_obj[tx_ot_id].current = 0;
+		ttgui_otobj_update_txobj(1);
+
+		// force speaker audio
+		CPCSwitchAudio(0);
+		ttgui_txobj_update_by_type(TTGUI_OT_AUDIO, 0);
+
+		// reset states
+		prefP->A2dpMediaStates = 0;
+		return;
+	}
+
+	// move pointer to the autostart panel
+	ttgui_panel_setid(PANEL_MODAL_ID);
+	// setup new clipboard
+	panel_clip = ttgui_clip_create();
+	ttgui_clip_new(panel_clip, pn_obj->top, pn_obj->left, pn_obj->width, pn_obj->height);
+	ttgui_clip_copy(panel_clip);
+	// open the selector panel
+	strcpy(pn_obj->title, title);
+	ttgui_createPanel();
+	// start bluetooth discovery
+	ttgui_osd_timer(10, 1000,ttgui_osdobj_update_bt_candidates, true);
+	a2dp_service_start_discovery(8);
+
 }

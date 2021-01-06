@@ -2,6 +2,7 @@
 #include <display.h>
 #include <backlight.h>
 #include <system.h>
+#include <event.h>
 
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
@@ -13,46 +14,20 @@
 
 #define DEFAULT_VREF 1100
 #define BATTERY_ADC_CHANNEL ADC1_CHANNEL_0
+#define SAMPLES 4
+#define BLINK_PERCENTAGE 5
+#define SLEEP_PERCENTAGE 3
+#define STATUS_UPDATE_SEC 120
+
 
 static bool battery_initialized = false;
 static esp_adc_cal_characteristics_t adc_characteristics;
 static BatteryInfo latest_battery_info;
+static BatteryInfo old_battery_info;
 static SemaphoreHandle_t info_mutex = NULL;
+static uint16_t per_threshold_old;
 
 static void battery_task(void *arg);
-
-int battery_init(void)
-{
-	adc1_config_width(ADC_WIDTH_12Bit);
-	adc1_config_channel_atten(BATTERY_ADC_CHANNEL, ADC_ATTEN_11db);
-	esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_11db, ADC_WIDTH_BIT_12, DEFAULT_VREF, &adc_characteristics);
-
-	info_mutex = xSemaphoreCreateMutex();
-	if (info_mutex == NULL) {
-		return -1;
-	}
-
-	battery_initialized = true;
-
-	xTaskCreate(battery_task, "battery_task", 4096, NULL, 5, NULL);
-
-	return 0;
-}
-
-int battery_deinit(void) { return 0; }
-
-#define SAMPLES 4
-
-int battery_read(BatteryInfo *info)
-{
-	assert(battery_initialized);
-	if (xSemaphoreTake(info_mutex, 10 / portTICK_PERIOD_MS) == pdFALSE) {
-		return -1;
-	}
-	*info = latest_battery_info;
-	xSemaphoreGive(info_mutex);
-	return 0;
-}
 
 static BatteryInfo battery_measure(void)
 {
@@ -84,13 +59,47 @@ static BatteryInfo battery_measure(void)
 	return (BatteryInfo){.voltage_mv = (uint16_t)battery_vol_mv, .percentage = percentage};
 }
 
-#define BLINK_PERCENTAGE 5
-#define SLEEP_PERCENTAGE 3
+int battery_init(void)
+{
+	adc1_config_width(ADC_WIDTH_12Bit);
+	adc1_config_channel_atten(BATTERY_ADC_CHANNEL, ADC_ATTEN_11db);
+	esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_11db, ADC_WIDTH_BIT_12, DEFAULT_VREF, &adc_characteristics);
+
+	info_mutex = xSemaphoreCreateMutex();
+	if (info_mutex == NULL) {
+		return -1;
+	}
+
+	battery_initialized = true;
+	xSemaphoreTake(info_mutex, portMAX_DELAY);
+	latest_battery_info = battery_measure();
+	xSemaphoreGive(info_mutex);
+	memcpy (&old_battery_info,&latest_battery_info, sizeof(BatteryInfo));
+	per_threshold_old = 100;
+
+	xTaskCreate(battery_task, "battery_task", 4096, NULL, 5, NULL);
+
+	return 0;
+}
+
+int battery_deinit(void) { return 0; }
+
+
+int battery_read(BatteryInfo *info)
+{
+	assert(battery_initialized);
+	if (xSemaphoreTake(info_mutex, 10 / portTICK_PERIOD_MS) == pdFALSE) {
+		return -1;
+	}
+	*info = latest_battery_info;
+	xSemaphoreGive(info_mutex);
+	return 0;
+}
 
 static void battery_task(void *arg)
 {
 	(void)arg;
-	int period_seconds = 60;
+	int period_seconds = STATUS_UPDATE_SEC;
 	static bool blink = false;
 	for (;;) {
 		xSemaphoreTake(info_mutex, portMAX_DELAY);
@@ -99,7 +108,7 @@ static void battery_task(void *arg)
 		printf("voltage: %d, percentage: %d\n", latest_battery_info.voltage_mv, latest_battery_info.percentage);
 
 		if (latest_battery_info.percentage > BLINK_PERCENTAGE) {
-			period_seconds = 60;
+			period_seconds = STATUS_UPDATE_SEC;
 			system_led_set(0);
 		} else if (latest_battery_info.percentage <= BLINK_PERCENTAGE) {
 			period_seconds = 1;
@@ -111,6 +120,24 @@ static void battery_task(void *arg)
 				esp_deep_sleep_start();
 			}
 		}
+
+		if (latest_battery_info.voltage_mv <= old_battery_info.voltage_mv)
+		{
+			// battery is drained
+			uint16_t per_threshold = ((uint16_t)(latest_battery_info.percentage + 1)/10)*10;
+			if ((old_battery_info.percentage >= per_threshold) && (latest_battery_info.percentage < per_threshold) &&
+					(per_threshold < per_threshold_old))
+			{
+				// we hit the threshold per 10% boundary
+				per_threshold_old = per_threshold;
+				event_t ev = {.a2dp.head.type = EVENT_TYPE_CAPRICE, .a2dp.event = CapriceEventBattery10Event};
+				push_event(&ev);
+				printf("Battery Event fired!\n");
+			}
+		}
+
+		// update values
+		memcpy (&old_battery_info,&latest_battery_info, sizeof(BatteryInfo));
 
 		vTaskDelay(period_seconds * 1000 / portTICK_PERIOD_MS);
 	}

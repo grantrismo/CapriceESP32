@@ -20,6 +20,8 @@
 
 //#include "CaPriCe.h"
 
+#include <stdio.h>
+#include <string.h>
 
 #include "types.h"
 #include "sections.h"
@@ -443,12 +445,6 @@ static const UInt8 AutoToggleDurationA[] =
 
 
 //
-// Sound volume adjustment
-//
-UInt8 AdjustSoundVolumeActive = 0;
-
-
-//
 // Keys
 //
 #define FIRST_ICON_X            5
@@ -700,7 +696,11 @@ static tUShort cpcKeyUp;
 static tUShort cpcKeyDown;
 static tUShort cpcKeyRight;
 static tUShort cpcKeyLeft;
-static tUShort cpcKeyCenter;
+static tUShort cpcKeyCenter;      // A
+static tUShort cpcKeyCenterEx;    // B
+static tUShort cpcKeyStart;       // Start
+static tUShort cpcKeySelect;      // Select
+
 static UInt32 HardCPCKeyCodeMaskA;
 static UInt32 HardCPCKeyCodeMaskB;
 static UInt32 HardCPCKeyCodeMaskC;
@@ -1052,6 +1052,84 @@ const tKeySetting* settingP;
 /*----------------------------------------------------------------------------*/
 
 
+tUShort SetKeyMapping(char* mappingString)
+{
+    if (!strcmp(mappingString, "JST_UP")) return(CPC_KEY_J0_UP);
+    if (!strcmp(mappingString, "JST_RIGHT")) return(CPC_KEY_J0_RIGHT);
+    if (!strcmp(mappingString, "JST_DOWN")) return(CPC_KEY_J0_DOWN);
+    if (!strcmp(mappingString, "JST_LEFT")) return(CPC_KEY_J0_LEFT);
+    if (!strcmp(mappingString, "JST_FIREA")) return(CPC_KEY_J0_FIRE1);
+    if (!strcmp(mappingString, "JST_FIREB")) return(CPC_KEY_J0_FIRE2);
+
+    if (!strcmp(mappingString, "JST2_UP")) return(CPC_KEY_J1_UP);
+    if (!strcmp(mappingString, "JST2_RIGHT")) return(CPC_KEY_J1_RIGHT);
+    if (!strcmp(mappingString, "JST2_DOWN")) return(CPC_KEY_J1_DOWN);
+    if (!strcmp(mappingString, "JST2_LEFT")) return(CPC_KEY_J1_LEFT);
+    if (!strcmp(mappingString, "JST2_FIREA")) return(CPC_KEY_J1_FIRE1);
+    if (!strcmp(mappingString, "JST2_FIREB")) return(CPC_KEY_J1_FIRE2);
+
+    if (!strcmp(mappingString, "KBD_SPACE")) return(CPC_KEY_SPACE);
+
+    if (!strcmp(mappingString, "KBD_F0")) return(CPC_KEY_F0);
+    if (!strcmp(mappingString, "KBD_F1")) return(CPC_KEY_F1);
+    if (!strcmp(mappingString, "KBD_F2")) return(CPC_KEY_F2);
+    if (!strcmp(mappingString, "KBD_F3")) return(CPC_KEY_F3);
+    if (!strcmp(mappingString, "KBD_F4")) return(CPC_KEY_F4);
+    if (!strcmp(mappingString, "KBD_F5")) return(CPC_KEY_F5);
+    if (!strcmp(mappingString, "KBD_F6")) return(CPC_KEY_F6);
+    if (!strcmp(mappingString, "KBD_F7")) return(CPC_KEY_F7);
+    if (!strcmp(mappingString, "KBD_F8")) return(CPC_KEY_F8);
+    if (!strcmp(mappingString, "KBD_F9")) return(CPC_KEY_F9);
+
+    if (!strcmp(mappingString, "KBD_COPY")) return(CPC_KEY_COPY);
+    if (!strcmp(mappingString, "KBD_LEFT")) return(CPC_KEY_CUR_LEFT);
+    if (!strcmp(mappingString, "KBD_UP")) return(CPC_KEY_CUR_UP);
+    if (!strcmp(mappingString, "KBD_DOWN")) return(CPC_KEY_CUR_DOWN);
+    if (!strcmp(mappingString, "KBD_RIGHT")) return(CPC_KEY_CUR_RIGHT);
+    if (!strcmp(mappingString, "KBD_LSHIFT")) return(CPC_KEY_LSHIFT);
+    if (!strcmp(mappingString, "KBD_RSHIFT")) return(CPC_KEY_RSHIFT);
+    if (!strcmp(mappingString, "KBD_CONTROL")) return(CPC_KEY_CONTROL);
+    if (!strcmp(mappingString, "KBD_BS")) return(CPC_KEY_BACKSLASH);
+    if (!strcmp(mappingString, "KBD_TAB")) return(CPC_KEY_TAB);
+    if (!strcmp(mappingString, "KBD_CAPSLOCK")) return(CPC_KEY_CAPSLOCK);
+    if (!strcmp(mappingString, "KBD_HOME")) return(CPC_KEY_CUR_HOMELN);
+    if (!strcmp(mappingString, "KBD_ENTER")) return(CPC_KEY_ENTER);
+    if (!strcmp(mappingString, "KBD_RETURN")) return(CPC_KEY_RETURN);
+
+    if (!strcmp(mappingString, "KBD_ESCAPE")) return(CPC_KEY_ESC);
+
+    // handle single Chars
+    return(palm_kbd[(mappingString[0] & 0x7F)]);
+}
+
+void EnableSpecialKeymapping(void)
+/***********************************************************************
+ *
+ *  EnableSpecialKeymapping
+ *
+ ***********************************************************************/
+ {
+   Err Result;
+   char* Settings = NULL;
+   const char* KeyMap[8] = {"UP","RIGHT","DOWN","LEFT","SELECT","START","A","B"};
+
+   for (int i=0;i<8;i++)
+   {
+     Result = CPCLoadKeymapFromConfigFile(KeyMap[i], &Settings);
+     if (Result == errNone)
+     {
+       //printf("KeyMap for %s = %s\n",KeyMap[i], Settings);
+       if (i==0) {cpcKeyUp = cpc_kbd[SetKeyMapping(Settings)]; continue;}
+       if (i==1) {cpcKeyRight = cpc_kbd[SetKeyMapping(Settings)]; continue;}
+       if (i==2) {cpcKeyDown = cpc_kbd[SetKeyMapping(Settings)]; continue;}
+       if (i==3) {cpcKeyLeft = cpc_kbd[SetKeyMapping(Settings)]; continue;}
+       if (i==4) {cpcKeySelect = cpc_kbd[SetKeyMapping(Settings)]; continue;}
+       if (i==5) {cpcKeyStart = cpc_kbd[SetKeyMapping(Settings)]; continue;}
+       if (i==6) {cpcKeyCenter = cpc_kbd[SetKeyMapping(Settings)]; continue;}
+       if (i==7) {cpcKeyCenterEx = cpc_kbd[SetKeyMapping(Settings)]; continue;}
+     }
+   }
+ }
 
 void EnableJoystick(void)
 /***********************************************************************
@@ -1280,7 +1358,7 @@ UInt32 keyDiff;
   //
   // Adjust sound volume
   //
-  if (AdjustSoundVolumeActive)
+  if (keyState & (keyBitRockerVolume))
   {
   	if (!AutoToggleActive)
   	{
@@ -1289,7 +1367,7 @@ UInt32 keyDiff;
       	// Rocker RIGHT pushed = Volume raised
         if (keyState & (keyBitRockerRight) )
         {
-          //SoundIncreaseVolume(1);
+          SoundIncreaseVolume(1);
           return;
         }
       }
@@ -1298,7 +1376,7 @@ UInt32 keyDiff;
         // Rocker UP pushed = Volums fast raised
         if (keyState & (keyBitRockerUp))
         {
-          //SoundIncreaseVolume(10);
+          SoundIncreaseVolume(10);
           return;
         }
       }
@@ -1307,7 +1385,7 @@ UInt32 keyDiff;
         // Rocker LEFT pushed = Volums lowered
         if (keyState & (keyBitRockerLeft))
         {
-          //SoundDecreaseVolume(1);
+          SoundDecreaseVolume(1);
           return;
         }
       }
@@ -1316,17 +1394,21 @@ UInt32 keyDiff;
         // Rocker DOWN pushed = Volums lowered
         if (keyState & (keyBitRockerDown))
         {
-          //SoundDecreaseVolume(10);
+          SoundDecreaseVolume(10);
           return;
         }
       }
   	}
+    if (prefP->SoundRenderer == 0)
+      CPCPushEvent(CapriceEventVolumeOkEvent);
+    else
+      CPCPushEvent(CapriceEventVolumeFailEvent);
   }
 
   // Rocker attached to?
   if (NewRockerAttach == RockerAsJoyOrCursors)
   {
-    // Not Not MENU button pressed?
+    // Not MENU button pressed?
     if ((keyState & KEYPAD_MENU) == 0)
     {
       // Rocker UP...
@@ -1381,7 +1463,7 @@ UInt32 keyDiff;
         }
       }
 
-      // Rocker Center
+      // Rocker Center A
       if (keyDiff & keyBitRockerButtonA)
       {
         if (keyState & keyBitRockerButtonA)
@@ -1393,75 +1475,48 @@ UInt32 keyDiff;
           RELEASE_KEY(cpcKeyCenter);
         }
       }
+
+      // Rocker Center B
+      if (keyDiff & (keyBitRockerButtonB))
+      {
+        if (keyState & (keyBitRockerButtonB))
+        {
+          PRESS_KEY(cpcKeyCenterEx);
+        }
+        else
+        {
+          RELEASE_KEY(cpcKeyCenterEx);
+        }
+      }
+
+      // Rocker Select
+      if (keyDiff & (keyBitRockerSelect))
+      {
+        if (keyState & (keyBitRockerSelect))
+        {
+          PRESS_KEY(cpcKeySelect);
+        }
+        else
+        {
+          RELEASE_KEY(cpcKeySelect);
+        }
+      }
+
+      // Rocker Start
+      if (keyDiff & (keyBitRockerStart))
+      {
+        if (keyState & (keyBitRockerStart))
+        {
+          PRESS_KEY(cpcKeyStart);
+        }
+        else
+        {
+          RELEASE_KEY(cpcKeyStart);
+        }
+      }
+
     } // Keypad check
   } // (NewRockerAttach == RockerAsJoyOrCursors)
-
-  //
-  // Hard CPC keys
-  //
-  if (keyDiff & HardCPCKeyCodeMaskA)
-  {
-  	tUChar keyCode = NativeCPC->HardKeyCPCKeyCodeA >> 3;
-  	keyCode <<= 4;
-  	keyCode |= NativeCPC->HardKeyCPCKeyCodeA & 7;
-
-    if (keyState & HardCPCKeyCodeMaskA)
-    {
-      PRESS_KEY(keyCode);
-    }
-    else
-    {
-      RELEASE_KEY(keyCode);
-    }
-  }
-
-  if (keyDiff & HardCPCKeyCodeMaskB)
-  {
-  	tUChar keyCode = NativeCPC->HardKeyCPCKeyCodeB >> 3;
-  	keyCode <<= 4;
-  	keyCode |= NativeCPC->HardKeyCPCKeyCodeB & 7;
-
-    if (keyState & HardCPCKeyCodeMaskB)
-    {
-      PRESS_KEY(keyCode);
-    }
-    else
-    {
-      RELEASE_KEY(keyCode);
-    }
-  }
-
-  if (keyDiff & HardCPCKeyCodeMaskC)
-  {
-  	tUChar keyCode = NativeCPC->HardKeyCPCKeyCodeC >> 3;
-  	keyCode <<= 4;
-  	keyCode |= NativeCPC->HardKeyCPCKeyCodeC & 7;
-
-    if (keyState & HardCPCKeyCodeMaskC)
-    {
-      PRESS_KEY(keyCode);
-    }
-    else
-    {
-      RELEASE_KEY(keyCode);
-    }
-  }
-
-  if (keyDiff & HardCPCKeyCodeMaskD)
-  {
-  	tUChar keyCode = NativeCPC->HardKeyCPCKeyCodeD >> 3;
-  	keyCode <<= 4;
-  	keyCode |= NativeCPC->HardKeyCPCKeyCodeD & 7;
-
-    if (keyState & HardCPCKeyCodeMaskD)
-    {
-      PRESS_KEY(keyCode);
-    }
-    else
-    {
-      RELEASE_KEY(keyCode);
-    }
-  }
 }
 /*----------------------------------------------------------------------------*/
 
@@ -1531,7 +1586,8 @@ void RockerAttachManager(UInt32 keyState,
       // Go back to the normal EMU + Joystick/Cursor mode
       OldRockerAttach = NewRockerAttach;
       NewRockerAttach = RockerAsJoyOrCursors;
-      CPCPushEvent(CapriceEventAboutRedraw);
+      EmulatorUnfreeze();
+      CPCPushEvent(CapriceEventRestartAudioPipe);
       return;
     }
 
@@ -1542,6 +1598,7 @@ void RockerAttachManager(UInt32 keyState,
       OldRockerAttach = NewRockerAttach;
       NewRockerAttach = RockerAsVirtualKeyboard;
       EmulatorUnfreeze();
+      CPCPushEvent(CapriceEventRestartAudioPipe);
       return;
     }
   }

@@ -21,6 +21,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <dirent.h>
 
 #include "types.h"
 #include "sections.h"
@@ -68,7 +69,38 @@
 
 typedef FILE*               FileRef;
 typedef UInt16	            FileOrigin;
+#define _PTR void *
 
+// Odroid I2S Mutex Sdcard access Wrapper
+#ifdef SIM
+#define _fopen fopen
+#define _fclose fclose
+#define _opendir opendir
+#define _readdir readdir
+#define _closedir closedir
+#define _fseek fseek
+#define _ftell ftell
+#define _fread fread
+#define _fgets fgets
+#define _fputs fputs
+#define _remove remove
+#define _rename rename
+#else
+extern DIR* _opendir(const char* name)  SECTION_FILES;
+extern struct dirent* _readdir(DIR* pdir) SECTION_FILES;
+extern int _closedir(DIR* f) SECTION_FILES;
+extern FILE* _fopen(const char *__restrict _name, const char *__restrict _type) SECTION_FILES;
+extern int _fclose(FILE* file) SECTION_FILES;
+extern int _fseek(FILE * f, long a, int b) SECTION_FILES;
+extern long _ftell( FILE * f) SECTION_FILES;
+extern size_t _fread(_PTR __restrict p, size_t _size, size_t _n, FILE *__restrict f) SECTION_FILES;
+extern char * _fgets(char *__restrict c, int i, FILE *__restrict f) SECTION_FILES;
+extern int _fputs(const char *__restrict c, FILE *__restrict f) SECTION_FILES;
+extern int _remove(const char * f) SECTION_FILES;
+extern int _rename(const char * f, const char * nf) SECTION_FILES;
+#endif
+
+// Caprice PalmOS Wrapper
 extern Err VFSVolumeEnumerate(UInt16 *volRefNumP, UInt32 *volIteratorP) SECTION_FILES;
 extern Err VFSFileOpen(UInt16 volRefNum, const char *pathNameP, UInt16 openMode, FileRef* fileRefP) SECTION_FILES;
 extern Err VFSFileClose(FileRef fileRef) SECTION_FILES;

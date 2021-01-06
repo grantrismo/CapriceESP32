@@ -23,20 +23,26 @@
 #include "sections.h"
 #include "Native_CPC.h"
 
-extern tUChar SoundBufferP[2][SND_BUFFER_SIZE];
+extern tUChar** SoundBufferP[2];
 extern tUChar SoundBufferCurrent;
 extern tULong SoundBytesToWrite;
+extern tUChar SoundBufferRead;
+extern tUChar *pbSndBufferLastP;
 
+extern Err SoundBufferAlloc() SECTION_SOUND;
+extern tVoid SoundBufferFree() SECTION_SOUND;
 extern Err SoundStart(tNativeCPC* NativeCPC) SECTION_SOUND;
+extern Err SoundBufferReset(tNativeCPC* NativeCPC) SECTION_SOUND;
 extern tVoid SoundStop(tNativeCPC* NativeCPC) SECTION_SOUND;
 extern tVoid SoundPlay(tNativeCPC* NativeCPC) SECTION_SOUND;
 extern tVoid SoundPause(tNativeCPC* NativeCPC) SECTION_SOUND;
-extern tULong SoundPush(tNativeCPC* NativeCPC) SECTION_SOUND;
+extern Int32 SoundPush(tNativeCPC* NativeCPC) SECTION_SOUND;
+extern Int32 SoundVariableCallback(tNativeCPC* NativeCPC, UInt8 *data, Int32 len) SECTION_SOUND;
 
 extern tVoid Sound_Calculate_Level_Tables(tNativeCPC* NativeCPC) SECTION_SOUND;
 extern tBool IsBufferRead() SECTION_SOUND;
 
-extern tVoid SoundIncreaseVolume(tUChar step) SECTION_SOUND;
-extern tVoid SoundDecreaseVolume(tUChar step) SECTION_SOUND;
+extern Err SoundIncreaseVolume(tUChar step) SECTION_SOUND;
+extern Err SoundDecreaseVolume(tUChar step) SECTION_SOUND;
 
 #endif // SOUND_H

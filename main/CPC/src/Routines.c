@@ -42,9 +42,14 @@ UInt32 TimGetTicks() {
  *
  ***********************************************************************/
     struct timeval te;
+    long            ms; // Milliseconds
+    time_t          s;  // Seconds
+
     gettimeofday(&te, NULL); // get current time
+
     UInt32 milliseconds = (UInt32)(te.tv_sec*1000L + te.tv_usec/1000);
     return milliseconds;
+
 }
 
 UInt32 SysTicksPerSecond() {

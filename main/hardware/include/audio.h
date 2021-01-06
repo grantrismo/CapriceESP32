@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef SIM
+#include <ringbuf.h>
+#endif
+
 typedef enum AudioOutput {
 	AudioOutputSpeaker,
 	AudioOutputDAC,
@@ -34,3 +38,12 @@ bool audio_device_active(void);
 void audio_play(void);
 
 void audio_pause (void);
+
+void i2s_set_emu_state_idle(void);
+
+void i2s_set_emu_state_running(void);
+
+#ifndef SIM
+void audio_set_rb_read(ringbuf_handle_t rb_handle);
+int i2s_get_rb_size(void);
+#endif

@@ -15,12 +15,14 @@ enum { KEYPAD_UP = 1,
 };
 
 // KeyCurrentState : 5-way rocker -> Mapped to Odroid keypad
-#define keyBitRockerUp              KEYPAD_UP
-#define keyBitRockerDown            KEYPAD_DOWN
-#define keyBitRockerLeft            KEYPAD_LEFT
-#define keyBitRockerRight           KEYPAD_RIGHT
+#define keyBitRockerUp              (KEYPAD_UP)
+#define keyBitRockerDown            (KEYPAD_DOWN)
+#define keyBitRockerLeft            (KEYPAD_LEFT)
+#define keyBitRockerRight           (KEYPAD_RIGHT)
 #define keyBitRockerButtonA         (KEYPAD_A)
 #define keyBitRockerButtonB         (KEYPAD_B)
+#define keyBitRockerSelect          (KEYPAD_SELECT)
+#define keyBitRockerStart          (KEYPAD_START)
 #define keyBitRockerCenter          (KEYPAD_A | KEYPAD_B)
 #define keyBitRockerMenu            (KEYPAD_B | KEYPAD_MENU)
 #define keyBitRockerViKeyboard      (KEYPAD_A | KEYPAD_MENU)
@@ -28,6 +30,7 @@ enum { KEYPAD_UP = 1,
 #define keyBitRockerNextPanelDown   (KEYPAD_MENU | KEYPAD_DOWN)
 #define keyBitRockerNextPanelLeft   (KEYPAD_MENU | KEYPAD_LEFT)
 #define keyBitRockerNextPanelRight   (KEYPAD_MENU | KEYPAD_RIGHT)
+#define keyBitRockerVolume          (KEYPAD_VOLUME)
 
 void keypad_init(void);
 uint16_t keypad_sample(void);

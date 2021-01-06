@@ -44,6 +44,7 @@ Window manager knows the active panel and attaches the naviagtion to it
 
 #include "CPC.h"
 #include "Files.h"
+#include "Routines.h"
 
 #define TTGUI_TX_LEFT 2					   // how many pixes between the text and it's boundary to the left
 #define TTGUI_TX_TOP 2 					   // how many pixes between the text and it's boundary to the top
@@ -52,6 +53,26 @@ Window manager knows the active panel and attaches the naviagtion to it
 
 #define MemPtrNew(p) malloc(p)
 #define MemPtrFree(p) free(p)
+
+// OSD
+typedef enum
+{
+	TTGUI_OSD_IDLE = 0,
+	TTGUI_OSD_TIMER = 1,
+	TTGUI_OSD_ONEHOT = 2,
+	TTGUI_OSD_REGISTERED = 4,
+	TTGUI_OSD_BLOCKKEYS = 8,
+	TTGUI_OSD_TIMEROSD = 16,
+	TTGUI_OSD_TERMINATE = 32,
+} ttgui_osd_state;
+
+// fonts
+typedef enum
+{
+	TTGUI_FONT_BOLT2x3x1 = 0,
+	TTGUI_FONT_BOLT3x3x1,
+	TTGUI_FONT_BOLT2x2x0,
+} ttgui_font_style;
 
 // errors
 typedef enum
@@ -62,7 +83,8 @@ typedef enum
 	TTGUI_WRONGSIZE,
 	TTGUI_NOTXOBJ,
 	TTGUI_NOHDOBJ,
-	TTGUI_NEEDGUIUPDATE
+	TTGUI_NEEDGUIUPDATE,
+	TTGUI_OSDBUSY,
 } ttgui_err;
 
 // modes
@@ -76,7 +98,9 @@ typedef enum
 {
 	TTGUI_OT_PREFS = 0,
 	TTGUI_OT_GAME,
-	TTGUI_OT_CPC
+	TTGUI_OT_CPC,
+	TTGUI_OT_BT,
+	TTGUI_OT_AUDIO,
 } ttgui_ot_type;
 
 typedef struct
@@ -85,11 +109,36 @@ typedef struct
 	char **selection;				// possible Selections
 } ttgui_sl_obj;
 
+// clipboard object
+typedef struct
+{
+	uint16_t top;
+	uint16_t left;
+	uint16_t width;
+	uint16_t height;
+	uint8_t* chunk;
+} ttgui_clip_obj;
+
+// on screen display object
+typedef struct
+{
+		ttgui_osd_state state;
+		uint16_t timer_value;
+		uint16_t tickms;
+		const char* string_text;
+		ttgui_font_style style;
+		char string_value[8];
+		char string_osd[20];
+		//uint32_t next_tickms;
+		ttgui_clip_obj* clip_obj;
+		void (*on_update_caller)(void);
+} ttgui_osd_obj;
+
 // option Object
 typedef struct
 {
 	ttgui_ot_type type;   // type of object
-	int current;					// current option option selected
+	uint16_t current;					// current option option selected
 	void (*on_select_caller)(void);			// on select function call
 	char *text;								// the text perfix Visible
 	ttgui_sl_obj options;							// the selection object
@@ -123,7 +172,7 @@ typedef struct
 	void (*on_access_caller)(void);			// on pannel access function call
   void (*on_leave_caller)(void);			// on pannel leave function call
 	void (*on_update_caller)(void);
-	const char title[19];						// the title of the panel
+	char title[19];						// the title of the panel
 	uint16_t top;							// dimension of the panel top coord
 	uint16_t left;							// dimension of the panel top coord
 	uint16_t width;							// dimension of the panel top coord
@@ -154,11 +203,20 @@ extern ttgui_pn_obj* pn_obj;
 extern void ttgui_open_game_cat();
 extern void ttgui_open_settings_options();
 
-//desing caller functions prototypes
+//desing public caller functions prototypes
 extern ttgui_err ttgui_PanelConstructor(gbuf_t* frame_buffer, uint16_t frame_width, uint16_t frame_height);
 extern ttgui_err ttgui_updateFrameBuffer(gbuf_t* frame_buffer, uint16_t frame_width, uint16_t frame_height);
 extern void ttgui_PanelDeConstructor();
 extern ttgui_err ttgui_windowManager(event_t* Event);
+extern ttgui_err ttgui_osdManager(event_t* Event);
+extern void ttgui_osdExecute();
+extern ttgui_err ttgui_osdString(const char* String, uint16_t tickms, uint8_t IsMenu);
+extern ttgui_err ttgui_osdRegister(const char* String, uint16_t tickms);
+extern ttgui_err ttgui_osdMenu(const char* String, uint16_t tickms);
+extern ttgui_osd_state ttgui_getOsdState();
+extern void ttgui_osdStop();
+extern void ttgui_osdRestore();
+extern void ttgui_osdTermTimer();
 extern void ttgui_setFgColorIndex(uint8_t color);
 extern void ttgui_setBgColorIndex(uint8_t color);
 extern void ttgui_setup();

@@ -88,9 +88,11 @@ tULong PNOMain(const tVoid*,
 
 #ifdef SIM
 #define ATTR_EXTRA
+#define ATTR_STATIC
 #else
 #include "esp_attr.h"
-#define ATTR_EXTRA //IRAM_ATTR
+#define ATTR_EXTRA IRAM_ATTR
+#define ATTR_STATIC DRAM_ATTR
 #endif
 
 
@@ -339,19 +341,19 @@ enum EDcodes
 };
 
 
-static tUChar irep_tmp1[4][4] =
+ATTR_STATIC tUChar irep_tmp1[4][4] =
 {
    {0, 0, 1, 0}, {0, 1, 0, 1}, {1, 0, 1, 1}, {0, 1, 1, 0}
 };
 
 /* tmp1 value for ind/indr/outd/otdr for [C.1-0][io.1-0] */
-static tUChar drep_tmp1[4][4] =
+ATTR_STATIC tUChar drep_tmp1[4][4] =
 {
    {0, 1, 0, 0}, {1, 0, 0, 1}, {0, 0, 1, 0}, {0, 1, 0, 1}
 };
 
 /* tmp2 value for all in/out repeated opcodes for B.7-0 */
-static tUChar breg_tmp2[256] =
+ATTR_STATIC tUChar breg_tmp2[256] =
 {
    0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1,
    0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0,
@@ -376,7 +378,7 @@ static tUChar breg_tmp2[256] =
 #define Ia 12
 #define Ia_ 0
 
-static tUChar cc_op[256] =
+ATTR_STATIC tUChar cc_op[256] =
 {
     4, 12,  8,  8,  4,  4,  8,  4,  4, 12,  8,  8,  4,  4,  8,  4,
    12, 12,  8,  8,  4,  4,  8,  4, 12, 12,  8,  8,  4,  4,  8,  4,
@@ -396,7 +398,7 @@ static tUChar cc_op[256] =
     8, 12, 12,  4, 12, 16,  8, 16,  8,  8, 12,  4, 12,  4,  8, 16
 };
 
-static tUChar cc_cb[256] =
+ATTR_STATIC tUChar cc_cb[256] =
 {
     4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
     4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
@@ -425,7 +427,7 @@ static tUChar cc_cb[256] =
 #define Iy 16
 #define Iy_ 0
 
-static tUChar cc_ed[256] =
+ATTR_STATIC tUChar cc_ed[256] =
 {
     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
@@ -445,7 +447,7 @@ static tUChar cc_ed[256] =
     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4
 };
 
-static tUChar cc_xy[256] =
+ATTR_STATIC tUChar cc_xy[256] =
 {
     4, 12,  8,  8,  4,  4,  8,  4,  4, 12,  8,  8,  4,  4,  8,  4,
    12, 12,  8,  8,  4,  4,  8,  4, 12, 12,  8,  8,  4,  4,  8,  4,
@@ -465,7 +467,7 @@ static tUChar cc_xy[256] =
     8, 12, 12,  4, 12, 16,  8, 16,  8,  8, 12,  4, 12,  4,  8, 16
 };
 
-static tUChar cc_xycb[256] =
+ATTR_STATIC tUChar cc_xycb[256] =
 {
    20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
    20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
@@ -485,7 +487,7 @@ static tUChar cc_xycb[256] =
    20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20
 };
 
-static tUChar cc_ex[256] =
+ATTR_STATIC tUChar cc_ex[256] =
 {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     4,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -1515,7 +1517,7 @@ tULong PNOMain(const tVoid* emulStateP,
                tVoid* userData68KP,
                Call68KFuncType* call68KFuncP)
 #else
-tULong Engine_CPCExecute(tNativeCPC* NativeCPC)
+tULong ATTR_EXTRA Engine_CPCExecute(tNativeCPC* NativeCPC)
 #endif
 /***********************************************************************
  *
@@ -5379,6 +5381,10 @@ tNativeULongField SampleValue;
     PSG->snd_bufferptr += 4;
     PSG->FilledBufferSize += 4;
   }
+  else
+  {
+    PSG->buffer_full = 1;
+  }
 
   PSG->Left_Chan = 0;
   PSG->Right_Chan = 0;
@@ -5386,7 +5392,6 @@ tNativeULongField SampleValue;
   if (PSG->snd_bufferptr >= PSG->pbSndBufferEnd)
   {
     PSG->snd_bufferptr = PSG->pbSndBuffer;
-    PSG->buffer_full = 1;
   }
 }
 /*----------------------------------------------------------------------------*/
@@ -5436,6 +5441,10 @@ tNativeUShortField SampleValue;
     PSG->snd_bufferptr += 2;
     PSG->FilledBufferSize += 2;
   }
+  else
+  {
+    PSG->buffer_full = 1;
+  }
 
   PSG->Left_Chan = 0;
   PSG->Right_Chan = 0;
@@ -5443,7 +5452,6 @@ tNativeUShortField SampleValue;
   if (PSG->snd_bufferptr >= PSG->pbSndBufferEnd)
   {
     PSG->snd_bufferptr = PSG->pbSndBuffer;
-    PSG->buffer_full = 1;
   }
 }
 /*----------------------------------------------------------------------------*/
@@ -5631,13 +5639,16 @@ tUChar SampleValue;
     PSG->snd_bufferptr++;
     PSG->FilledBufferSize++;
   }
+  else
+  {
+    PSG->buffer_full = 1;
+  }
 
   PSG->Left_Chan = 0;
 
   if (PSG->snd_bufferptr >= PSG->pbSndBufferEnd)
   {
     PSG->snd_bufferptr = PSG->pbSndBuffer;
-    PSG->buffer_full = 1;
   }
 }
 /*----------------------------------------------------------------------------*/

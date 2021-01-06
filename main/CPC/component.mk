@@ -9,4 +9,4 @@
 
 COMPONENT_ADD_INCLUDEDIRS = include ../common ../rsc
 COMPONENT_SRCDIRS = src
-CFLAGS += -O2
+CFLAGS += -O3

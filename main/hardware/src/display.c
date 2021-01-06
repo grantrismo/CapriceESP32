@@ -30,16 +30,18 @@ static const int LCD_SPI_CLOCK_RATE = SPI_MASTER_FREQ_40M;
 #define MADCTL_MH 0x04
 #define TFT_RGB_BGR 0x08
 
+void videoTask(void* argP);
+
 static spi_transaction_t trans[8];
 static spi_device_handle_t spi;
 static TaskHandle_t xTaskToNotify = NULL;
 static bool waitForTransactions = false;
 static uint16_t VideoTaskCommand = 1;
 static QueueHandle_t videoQueue;
-void videoTask(void* argP);
 
+uint8_t stopDisplay = 0;
 SemaphoreHandle_t odroid_spi_mutex = NULL;
-
+SemaphoreHandle_t display_mutex = NULL;
 #define PARALLEL_LINES (5)
 
 static uint16_t *pbuf[2];
@@ -92,6 +94,43 @@ DRAM_ATTR static const ili_init_cmd_t ili_init_cmds[] = {
     {0x29, {0}, 0x80}, // Display on
 
     {0, {0}, 0xff}};
+
+
+void display_lock()
+{
+    if (!display_mutex)
+    {
+        display_mutex = xSemaphoreCreateMutex();
+        if (!display_mutex) abort();
+    }
+
+    if (xSemaphoreTake(display_mutex, portMAX_DELAY) != pdTRUE)
+    {
+
+        abort();
+    }
+}
+
+void display_unlock()
+{
+    if (!display_mutex) abort();
+    xSemaphoreGive(display_mutex);
+}
+void display_stop()
+{
+    //display_lock();
+    //stopDisplay = 1;
+    //display_unlock();
+		xSemaphoreTake(odroid_spi_mutex,portMAX_DELAY);
+
+}
+void display_resume()
+{
+    //stopDisplay = 0;
+		xSemaphoreGive(odroid_spi_mutex);
+
+}
+
 
 // Send a command to the ILI9341. Uses spi_device_transmit, which waits until
 // the transfer is complete.
@@ -380,45 +419,47 @@ void videoTask(void* argP)
 	{
 		xQueuePeek(videoQueue, &param, portMAX_DELAY);
 		VideoTaskCommand = 0;
-
 		xSemaphoreTake(odroid_spi_mutex, portMAX_DELAY);
 		xTaskToNotify = xTaskGetCurrentTaskHandle();
 
-		send_reset_drawing(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+		if (1)
+		{
+			send_reset_drawing(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 
-		for (short dy = 0; dy < DISPLAY_HEIGHT; dy += PARALLEL_LINES) {
-			uint16_t *pbuf = get_pbuf();
+			for (short dy = 0; dy < DISPLAY_HEIGHT; dy += PARALLEL_LINES) {
+				uint16_t *pbuf = get_pbuf();
 
-			if (SystemHalt == 1)
-			{
-				// blit full screen menus
-				//if (dy < ON_SCR_HEIGHT)
-					blit_ind_565(OffScreenBuffer->data[0] + OffScreenBuffer->width * dy, pbuf, OffScreenBuffer->width, PARALLEL_LINES);
-				//else
-				//	blit_ind_565(OffScreenBuffer->data[1] + OffScreenBuffer->width * (dy - ON_SCR_HEIGHT), pbuf, OffScreenBuffer->width, PARALLEL_LINES);
-			}
-			else
-			{
-				// Keyboard-blit
-				if ((NewRockerAttach == RockerAsVirtualKeyboard) && (dy >= (DISPLAY_HEIGHT - DISPLAY_KEYB_HEIGHT)))
+				if (SystemHalt == 1)
 				{
-				ybase = GetCurrentKeyBaseCoordY();
-				blit_keyboard_565(KeyBoardOffScreenBuffer->data[0] + KeyBoardOffScreenBuffer->width * (ybase + dy - (DISPLAY_HEIGHT - DISPLAY_KEYB_HEIGHT)),
-					pbuf,
-					KeyBoardOffScreenBuffer->width, PARALLEL_LINES);
+					// blit full screen menus
+					//if (dy < ON_SCR_HEIGHT)
+						blit_ind_565(OffScreenBuffer->data[0] + OffScreenBuffer->width * dy, pbuf, OffScreenBuffer->width, PARALLEL_LINES);
+					//else
+					//	blit_ind_565(OffScreenBuffer->data[1] + OffScreenBuffer->width * (dy - ON_SCR_HEIGHT), pbuf, OffScreenBuffer->width, PARALLEL_LINES);
 				}
 				else
 				{
-					// EMU Blit
-					blit_ind_565(OffScreenBuffer->data[0] + OffScreenBuffer->width * dy , pbuf, OffScreenBuffer->width, PARALLEL_LINES);
+					// Keyboard-blit
+					if ((NewRockerAttach == RockerAsVirtualKeyboard) && (dy >= (DISPLAY_HEIGHT - DISPLAY_KEYB_HEIGHT)))
+					{
+					ybase = GetCurrentKeyBaseCoordY();
+					blit_keyboard_565(KeyBoardOffScreenBuffer->data[0] + KeyBoardOffScreenBuffer->width * (ybase + dy - (DISPLAY_HEIGHT - DISPLAY_KEYB_HEIGHT)),
+						pbuf,
+						KeyBoardOffScreenBuffer->width, PARALLEL_LINES);
+					}
+					else
+					{
+						// EMU Blit
+						blit_ind_565(OffScreenBuffer->data[0] + OffScreenBuffer->width * dy , pbuf, OffScreenBuffer->width, PARALLEL_LINES);
+					}
 				}
+
+				send_continue_line(pbuf, DISPLAY_WIDTH, PARALLEL_LINES);
 			}
 
-			send_continue_line(pbuf, DISPLAY_WIDTH, PARALLEL_LINES);
+			waitForTransactions = true;
+			send_continue_wait();
 		}
-
-		waitForTransactions = true;
-		send_continue_wait();
 		xSemaphoreGive(odroid_spi_mutex);
 		xQueueReceive(videoQueue, &param, portMAX_DELAY);
 	}

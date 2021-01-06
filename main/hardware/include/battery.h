@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <string.h>
 
 typedef struct BatteryInfo {
 	/// Battery voltage in millivolts, should be between 3500 and 4200ish

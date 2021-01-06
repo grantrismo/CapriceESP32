@@ -411,6 +411,7 @@ extern void ReleasePressedKey(void) SECTION_KEYBOARD;
 extern void SelectCPCColouredKeyboard(void) SECTION_KEYBOARD;
 extern void SelectCPCSpecialKeyboard(void) SECTION_KEYBOARD;
 
+extern void EnableSpecialKeymapping(void) SECTION_KEYBOARD;
 extern void EnableJoystick(void) SECTION_KEYBOARD;
 extern void DisableJoystick(void) SECTION_KEYBOARD;
 extern void EnableSound(void) SECTION_KEYBOARD;

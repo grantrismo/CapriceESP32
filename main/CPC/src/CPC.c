@@ -213,6 +213,47 @@ void FlipAndCommitFrameBuffer(void)
   }
 }
 
+Err CPCSwitchAudio(UInt8 SinkId)
+/***********************************************************************
+ *
+ *  CPCSwitchAudio, 0 Intern, 1 BT audio
+ *
+ ***********************************************************************/
+{
+    if (NativeCPC->PSG->snd_enabled == 1)
+    {
+      printf("Can't switch Audio, EMU still running");
+      return(sysErrNotAllowed);
+    }
+
+    NativeCPC->prefP->SoundRenderer = SinkId;
+    return(errNone);
+
+}
+
+Int32 SoundRender(UInt8 *data, Int32 len)
+/***********************************************************************
+ *
+ *  SoundRender
+ *
+ ***********************************************************************/
+{
+  // this function handles all sound Rendering optins
+  if (prefP->SoundRenderer == 1)
+  {
+    // system needs to use callback mode
+    return (SoundVariableCallback(NativeCPC, data, len));
+  }
+  else
+  {
+    // system uses default sound queue mode
+    return(SoundPush(NativeCPC));
+
+  }
+}
+
+/*----------------------------------------------------------------------------*/
+
 Err CPCFirstStart(void)
 /***********************************************************************
  *
@@ -860,15 +901,12 @@ UInt16 CPCLoadDiskAndGetCatalog(char* PathnameP, char* FilenameP, char** Cat)
   tDrive* driveP = DriveSelected == DriveA ? NativeCPC->DriveA : NativeCPC->DriveB;
 
   // Charger le nouveau disque
-  printf("CPCLoad %d\n",1);
   SetDriveFilename(driveP, FilenameP);
-  printf("CPCLoad %d\n",2);
   if (LoadDiskImage(PathnameP,
                     driveP,
                     NativeCPC) != errNone)
   {
     // Problèmes pendant le chargement
-    printf("CPCLoad %d\n",3);
     EjectDisk(driveP, NativeCPC);
     return (0);
   }
@@ -877,8 +915,15 @@ UInt16 CPCLoadDiskAndGetCatalog(char* PathnameP, char* FilenameP, char** Cat)
     return (ReadDiskCatalogue(DriveSelected, 0, Cat, NativeCPC));
   }
 }
-
 /*----------------------------------------------------------------------------*/
+
+Err CPCLoadKeymapFromConfigFile(const char* Key, char** Settings)
+{
+    tDrive* driveP = DriveSelected == DriveA ? NativeCPC->DriveA : NativeCPC->DriveB;
+    return(LoadKeymapFromConfigFile(driveP, Key, Settings));
+}
+
+
 void CPCSwapDrive(void)
 /***********************************************************************
  *

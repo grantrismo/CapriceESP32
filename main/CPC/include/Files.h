@@ -38,12 +38,14 @@
 #define DEFAULT_CAPRICE_PATH      "."
 #define DEFAULT_SCREENSHOT_PATH   "."
 #define DEFAULT_CHEAT_PATH        "../cheat"
+#define DEFAULT_KEYMAPPING_PATH   "../keymap"
 #else
 #define ROOT_PATH                 "/sd"
 #define DEFAULT_DISK_PATH         "/sd/cpc/dsk"
 #define DEFAULT_CAPRICE_PATH      "/sd/cpc/cps"
 #define DEFAULT_SCREENSHOT_PATH   "/sd/cpc/scr"
 #define DEFAULT_CHEAT_PATH        "/sd/cpc/cmf"
+#define DEFAULT_KEYMAPPING_PATH   "/sd/cpc/kmf"
 #endif
 
 #define NODISK_FILENAME           ""
@@ -52,6 +54,7 @@
 #define DISK_EXTENSION            "." DISK_EXTENSION_SHORT
 #define SCREENSHOT_EXTENSION      ".bmp"
 #define CHEAT_EXTENSION           ".cmf"
+#define KEYMAPPING_EXTENSION      ".kmf"
 #define NEW_DISK_FILENAME         "New Disk" DISK_EXTENSION
 #define LASTSESSION_FILENAME      "LastSession" CONTEXT_EXTENSION
 
@@ -63,6 +66,7 @@
 #define	chrNull							0x0000
 
 #define errNone                       0x0000  // No error
+#define errBadName	                  0x0001
 #define memErrorClass                 0x0100  // Memory Manager
 // copied from MemoryMgr.h
 #define memErrNotEnoughSpace          (memErrorClass | 2)
@@ -160,6 +164,8 @@ extern Err LoadDiskImageFromMemory(tDrive* nativedriveP,
                                    tUChar* DiskContentP) SECTION_FILES;
 
 extern UInt16 ReadDiskCatalogue(tDriveEnum drive, tUChar User, char** CatP, tNativeCPC* NativeCPC) SECTION_FILES;
+
+extern Err LoadKeymapFromConfigFile(tDrive* nativedriveP, const char* Key, char** Setting) SECTION_FILES; 
 
 extern Err SaveDiskImage(const char* pathP,
                          tDrive* nativedriveP,

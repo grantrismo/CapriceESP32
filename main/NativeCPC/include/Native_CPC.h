@@ -103,9 +103,9 @@
 #define SND_STEREO                1 /* 0=Mono, 1=Stereo */
 
 // Number of CPU cycles per sample
-#define SND_CYCLE_SOUND_INIT      (((CLOCK_Z80 << 8) / SND_FREQ) << 8) // ((CLOCK_Z80 << 16) / SND_FREQ)
+#define SND_CYCLE_SOUND_INIT      ((((CLOCK_Z80 << 8) / SND_FREQ) << 8)) // ((CLOCK_Z80 << 16) / SND_FREQ)
 // Number of AY cycles per sample (Most significant short)
-#define SND_LOOP_COUNT_INIT       (((CLOCK_AY << 8) / SND_FREQ) << 8) // ((CLOCK_AY << 16) / SND_FREQ)
+#define SND_LOOP_COUNT_INIT       ((((CLOCK_AY << 8) / SND_FREQ) << 8)) // ((CLOCK_AY << 16) / SND_FREQ)
 
 // Lightguns
 #define LIGHTGUN_BEAM_MS          1 // beam pulse duration (in ms) (Best found=5 for GunStick)
@@ -912,7 +912,7 @@ typedef struct
 
   tNoise Noise;
 
-  tULong FilledBufferSize;
+  tLong FilledBufferSize;
 
   tULong Ton_Counter_A;
   tULong Ton_Counter_B;
@@ -1024,6 +1024,8 @@ typedef struct
   tUChar SoundEnabled;            // 0 = No sound, 1 = Sound played
   tUChar SoundVolume;             // Sound volume when played
   tUChar SoundSystemVolume;       // 0 = Own volume, 1 = System Games volume
+  tUChar SoundRenderer;          // 0 = Internal Sound, 1 = Bluetooth
+  tUChar A2dpMediaStates;         // holds a copy of the A2DP Bluetooth meadia states
   // Added from CPF
   tUChar  SpeakerStereo;           // 0 = Mono, 1 = Stereo
   tUChar  Speaker16Bits;           // 0 = 8 bits, 1 = 16 bits

@@ -3,17 +3,19 @@
 #include <driver/i2s.h>
 #include <driver/rtc_io.h>
 #include <driver/dac.h>
+#include <ringbuf.h>
 
 #include <stdio.h>
+#include <string.h>
 
 #include "Native_CPC.h"
 
 #include "Sound.h"
 #include "audio.h"
 
-#define AUDIO_IO_NEGATIVE GPIO_NUM_25
-#define AUDIO_IO_POSITIVE GPIO_NUM_26
-#define I2S_NUM I2S_NUM_0
+#define AUDIO_IO_NEGATIVE 					GPIO_NUM_25
+#define AUDIO_IO_POSITIVE 					GPIO_NUM_26
+#define I2S_NUM 										I2S_NUM_0
 
 #if SND_16BITS == 0
 #define SND_STREAM_BITS  8
@@ -27,12 +29,30 @@
 #define SND_STREAM_STEREO  2
 #endif /* SND_STEREO */
 
+//Num_bytes = (bits_per_sample / 8) * num_chan * dma_buf_count * dma_buf_len
+#define I2S_BUFFER_LEN 							(256)
+#define I2S_BUFFER_COUNT 						(4)
+#define I2S_BYTES_PER_FRAME					(SND_STREAM_BITS/8 * SND_STREAM_STEREO * I2S_BUFFER_LEN)
+
+typedef enum {
+	STATE_DRIVER_DISABLED = 0,
+	STATE_DRIVER_ENABLED,
+	STATE_SILENCE_FEEDING,
+	STATE_ACTIVE_FEEDING,
+} DriverState;
+
+typedef enum {
+  EMU_AV_MEDIA_STATE_IDLE,
+  EMU_AV_MEDIA_STATE_RUNNING,
+} EmuState;
 
 static int audio_volume = 50;
 static float audio_volume_f = 0.5f;
-static uint8_t audioPause = 1;
-static bool initialized = false;
+
 static AudioOutput chosen_output = AudioOutputSpeaker;
+static ringbuf_handle_t audio_rb = NULL;
+static DriverState driver_state = STATE_DRIVER_DISABLED;
+static EmuState s_emu_state = EMU_AV_MEDIA_STATE_IDLE;
 
 static uint16_t AudioTaskCommand = 1;
 static QueueHandle_t audioQueue;
@@ -41,9 +61,33 @@ static QueueHandle_t audioQueue;
 static void audio_submit_i2s(int16_t *buf, int n_frames);
 static void audioTask(void* arg);
 
+void audio_set_rb_read(ringbuf_handle_t rb_handle)
+{
+	audio_rb = rb_handle;
+}
+
+static int drive_speaker()
+{
+	esp_err_t error;
+	if ((error = i2s_set_pin(I2S_NUM, NULL)) != ESP_OK) {
+		fprintf(stderr, "Could not set i2s pin: %s\n", esp_err_to_name(error));
+		return -1;
+	}
+
+	if ((error = i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN)) != ESP_OK){
+		fprintf(stderr, "Issue on enabling DAC: %s\n", esp_err_to_name(error));
+	}
+	return -1;
+}
+
 static int shutdown_speaker()
 {
 	esp_err_t error;
+	if (driver_state == STATE_ACTIVE_FEEDING)
+	{
+		fprintf(stderr, "Driver still active feeding, cannot shutdown driver\n");
+		return -1;
+	}
 #define error_message "Could not shutdown dac or amplifier amp: %s\n"
 	if ((error = i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE)) != ESP_OK) {
 		fprintf(stderr, error_message, esp_err_to_name(error));
@@ -62,6 +106,7 @@ static int shutdown_speaker()
 		return -1;
 	}
 #undef error_message
+	driver_state = STATE_DRIVER_DISABLED;
 	return 0;
 }
 
@@ -69,7 +114,7 @@ static int16_t silence[64] = {0};
 
 int audio_init()
 {
-	if (initialized) {
+	if (driver_state != STATE_DRIVER_DISABLED) {
 		fprintf(stderr, "Audio already initialized!\n");
 		return -1;
 	}
@@ -85,8 +130,8 @@ int audio_init()
 				   .bits_per_sample = SND_STREAM_BITS ,
 				   .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
 				   .communication_format = output == AudioOutputSpeaker ? commfmt_speaker : commfmt_dac,
-				   .dma_buf_count = 6,
-				   .dma_buf_len = 512,
+				   .dma_buf_count = I2S_BUFFER_COUNT,
+				   .dma_buf_len = I2S_BUFFER_LEN,
 				   .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
 				   .use_apll = output == true ? true : false};
 
@@ -103,12 +148,8 @@ int audio_init()
 		fprintf(stderr, "Could not install i2s driver: %s\n", esp_err_to_name(error));
 		return -1;
 	}
-	if ((error = i2s_set_pin(I2S_NUM, output == AudioOutputDAC ? &dac_pin_config : NULL)) != ESP_OK) {
-		fprintf(stderr, "Could not set i2s pin: %s\n", esp_err_to_name(error));
-		return -1;
-	}
 
-	initialized = true;
+	driver_state = STATE_DRIVER_ENABLED;
 	chosen_output = output;
 
 	if (output == AudioOutputDAC) {
@@ -136,26 +177,37 @@ static void audioTask(void* arg)
 {
   // sound
   const uint16_t* param;
-	int16_t* streamAudioBuffer;
+	static uint16_t streamAudioBuffer[I2S_BYTES_PER_FRAME];
+	int bytes_read;
 
 	printf("audioTask: starting\n");
 
   while(1)
   {
-			// New object ready
-      xQueuePeek(audioQueue, &param, portMAX_DELAY);
-
-			// Currently 16bits audio is configured in Caprice, NOTE on changing it to 8bits, modification on buffer is needed
-			// Buffer is used to transfer R+L to Mono, extend to 32bits DAC1+2 format HIGH,LOW byte holds equal value
-			if (!audioPause)
+			xQueuePeek(audioQueue, &param, portMAX_DELAY);
+			if (driver_state == STATE_ACTIVE_FEEDING)
 			{
-				streamAudioBuffer = (SoundBufferCurrent == 0) ? (int16_t*)&SoundBufferP[1][0] : (int16_t*)&SoundBufferP[0][0];
-				audio_submit_i2s(streamAudioBuffer, SoundBytesToWrite>>2);
-				SoundBytesToWrite = 0;
+				while (rb_bytes_filled(audio_rb) >= I2S_BYTES_PER_FRAME)
+				{
+					bytes_read = rb_read(audio_rb, (char *)&streamAudioBuffer, I2S_BYTES_PER_FRAME, 0);
+					if (bytes_read != I2S_BYTES_PER_FRAME)
+						memset(&streamAudioBuffer[0], 0, I2S_BYTES_PER_FRAME);
+
+					audio_submit_i2s(streamAudioBuffer, I2S_BUFFER_LEN);
+				}
+				if (s_emu_state == EMU_AV_MEDIA_STATE_IDLE)
+				{
+						driver_state = STATE_SILENCE_FEEDING;
+						rb_reset(audio_rb);
+				}
+			}
+			else
+			{
+				if ((rb_bytes_filled(audio_rb) >= I2S_BYTES_PER_FRAME) && (s_emu_state == EMU_AV_MEDIA_STATE_RUNNING))
+						driver_state = STATE_ACTIVE_FEEDING;
 			}
 
-		// delete object from the queue
-    xQueueReceive(audioQueue, &param, portMAX_DELAY);
+			xQueueReceive(audioQueue, &param, portMAX_DELAY);
   }
 
   vTaskDelete(NULL);
@@ -166,12 +218,13 @@ static void audioTask(void* arg)
 
 void audio_submit(void)
 {
-	xQueueSend(audioQueue, &AudioTaskCommand, portMAX_DELAY);
+	if (s_emu_state == EMU_AV_MEDIA_STATE_RUNNING)
+		xQueueSend(audioQueue, &AudioTaskCommand, portMAX_DELAY);
 }
 
 int audio_shutdown(void)
 {
-	if (!initialized) {
+	if (driver_state == STATE_DRIVER_DISABLED) {
 		fprintf(stderr, "Audio was not initialized!\n");
 		return -1;
 	}
@@ -183,7 +236,7 @@ int audio_shutdown(void)
 	}
 
 	shutdown_speaker();
-	initialized = false;
+	driver_state = STATE_DRIVER_DISABLED;
 
 	return 0;
 }
@@ -267,32 +320,34 @@ static void apply_volume(short *buf, const int n_frames)
 // device play
 void audio_play(void)
 {
-	if (initialized)
+	if (driver_state != STATE_DRIVER_DISABLED)
 	{
 		i2s_start(I2S_NUM);
-		audioPause = 0;
+		drive_speaker();
+		driver_state = STATE_ACTIVE_FEEDING;
 	}
 }
 
 // device pause
 void audio_pause(void)
 {
-	if (initialized)
+	if (driver_state != STATE_DRIVER_DISABLED)
 	{
+		shutdown_speaker();
 		i2s_stop(I2S_NUM);
-		audioPause = 1;
+		driver_state = STATE_SILENCE_FEEDING;
 	}
 }
 
 // device open status
 bool audio_device_active(void)
 {
-	return(initialized);
+	return (driver_state != STATE_DRIVER_DISABLED);
 }
 
 void audio_submit_i2s(short *buf, int n_frames)
 {
-	if (!initialized) {
+	if (driver_state == STATE_DRIVER_DISABLED) {
 		fprintf(stderr, "audio not yet initialized");
 		return;
 	}
@@ -328,6 +383,21 @@ int audio_volume_set(int volume_percent)
 	audio_volume_f = (float)volume_percent / 100.0f;
 	printf("Volume Set %d\n",audio_volume);
 	return audio_volume;
+}
+
+void i2s_set_emu_state_idle()
+{
+  s_emu_state = EMU_AV_MEDIA_STATE_IDLE;
+}
+
+void i2s_set_emu_state_running()
+{
+  s_emu_state = EMU_AV_MEDIA_STATE_RUNNING;
+}
+
+int i2s_get_rb_size()
+{
+	return (I2S_BUFFER_COUNT * I2S_BYTES_PER_FRAME);
 }
 
 int audio_volume_get(void) { return audio_volume; }

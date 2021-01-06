@@ -1,6 +1,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <freertos/timers.h>
 
 #include <event.h>
 #include <keypad.h>
@@ -9,6 +10,7 @@
 #define REPEAT_RATE (80 / portTICK_PERIOD_MS)
 
 static QueueHandle_t event_queue;
+static TimerHandle_t osd_timer;
 
 static void keypad_task(void *arg)
 {
@@ -83,3 +85,27 @@ int poll_event(event_t *event)
 }
 
 int push_event(event_t *event) { return xQueueSend(event_queue, event, 10 / portTICK_PERIOD_MS); }
+
+
+static void timer_callback(TimerHandle_t xTimer)
+{
+	event_t ev = {.caprice.head.type = EVENT_TYPE_CAPRICE, .caprice.event = CapriceEventTimerEvent};
+	push_event(&ev);
+}
+
+void timer_event_start(uint32_t tickms)
+{
+	osd_timer = xTimerCreate("osdtimer", tickms / portTICK_PERIOD_MS, pdTRUE, ( void * )0, timer_callback);
+	xTimerStart(osd_timer,0);
+}
+
+void timer_event_stop()
+{
+	xTimerStop(osd_timer,0);
+	xTimerDelete(osd_timer,0);
+}
+
+void timer_event_reset(uint32_t tickms)
+{
+	xTimerReset(osd_timer,0);
+}

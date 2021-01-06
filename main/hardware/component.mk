@@ -9,3 +9,4 @@
 
 COMPONENT_ADD_INCLUDEDIRS = include ../CPC/include
 COMPONENT_SRCDIRS = src
+CFLAGS := -O3 -mlongcalls -Wno-error -Wstrict-aliasing

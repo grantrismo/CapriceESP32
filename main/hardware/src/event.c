@@ -10,7 +10,7 @@
 #define REPEAT_RATE (80 / portTICK_PERIOD_MS)
 
 static QueueHandle_t event_queue;
-static TimerHandle_t osd_timer;
+static TimerHandle_t osd_timer = NULL;
 
 static void keypad_task(void *arg)
 {
@@ -101,11 +101,21 @@ void timer_event_start(uint32_t tickms)
 
 void timer_event_stop()
 {
-	xTimerStop(osd_timer,0);
-	xTimerDelete(osd_timer,0);
+	if (osd_timer != NULL)
+	{
+		xTimerStop(osd_timer,0);
+		xTimerDelete(osd_timer,0);
+		osd_timer = NULL;
+	}
 }
 
 void timer_event_reset(uint32_t tickms)
 {
 	xTimerReset(osd_timer,0);
+}
+
+void kick_osd_event()
+{
+	event_t ev = {.caprice.head.type = EVENT_TYPE_CAPRICE, .caprice.event = CapriceEventTimerEvent};
+	push_event(&ev);
 }

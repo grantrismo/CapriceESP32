@@ -36,6 +36,7 @@
 
 typedef enum {
 	STATE_DRIVER_DISABLED = 0,
+	STATE_DRIVER_IDLE,
 	STATE_DRIVER_ENABLED,
 	STATE_SILENCE_FEEDING,
 	STATE_ACTIVE_FEEDING,
@@ -106,7 +107,7 @@ static int shutdown_speaker()
 		return -1;
 	}
 #undef error_message
-	driver_state = STATE_DRIVER_DISABLED;
+	driver_state = STATE_DRIVER_IDLE;
 	return 0;
 }
 
@@ -182,7 +183,7 @@ static void audioTask(void* arg)
 
 	printf("audioTask: starting\n");
 
-  while(1)
+  while(driver_state != STATE_DRIVER_DISABLED)
   {
 			xQueuePeek(audioQueue, &param, portMAX_DELAY);
 			if (driver_state == STATE_ACTIVE_FEEDING)
@@ -210,7 +211,9 @@ static void audioTask(void* arg)
 			xQueueReceive(audioQueue, &param, portMAX_DELAY);
   }
 
-  vTaskDelete(NULL);
+	vQueueDelete(audioQueue);
+ 	vTaskDelete(NULL);
+
 	while (1) {};
 
 }

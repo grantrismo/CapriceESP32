@@ -56,7 +56,7 @@
 
 // Basic DEBUG SWITCH
 #undef CPC_DEBUG_ENABLED
-#define CPC_DEBUG_ENABLED
+//#define CPC_DEBUG_ENABLED
 
 #ifdef CPC_DEBUG_ENABLED
 #  define DBG_PRINT(fmt, args...) fprintf(stderr, "DEBUG: %s:%d:%s():" fmt, __FILE__, __LINE__, __func__, ##args)
@@ -81,6 +81,7 @@
 #define	sysErrNoFreeResource					(sysErrorClass | 3)
 #define	sysErrNoFreeRAM						    (sysErrorClass | 4)
 #define	sysErrNotAllowed						  (sysErrorClass | 5)
+#define sysErrResetIssue              (sysErrorClass | 6)
 
 #define MemPtrNew(p) malloc(p)
 #define MemPtrFree(p) free(p)
@@ -307,11 +308,26 @@ UInt32 Size;
 
     CPCFIRSTSTART_TRACE_SHOW_INT(2);
 
+    // do all dynamic Allocation
+    #ifdef __NEWMEMLAYOUT__
+    NativeCPC = (tNativeCPC*)calloc(1,sizeof(tNativeCPC));
+    NativeCPC->Z80 = (tZ80*)calloc(1,DWORD_UPPER_ALIGN(sizeof(tZ80)));
+    NativeCPC->Z80->SZ = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+    NativeCPC->Z80->SZ_BIT = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+    NativeCPC->Z80->SZP = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+    NativeCPC->Z80->SZHV_inc = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+    NativeCPC->Z80->SZHV_dec = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+    NativeCPC->CRTC = (tCRTC*)calloc(1,sizeof(tCRTC));
+    NativeCPC->mode0_table = (tUChar*)calloc(1,SIZETAB_MODE0);
+    NativeCPC->mode1_table = (tUChar*)calloc(1,SIZETAB_MODE1);
+    NativeCPC->GateArray = (tGateArray*)calloc(1,sizeof(tGateArray));
+    NativeCPC->PPI = (tPPI*)calloc(1,sizeof(tPPI));
+    NativeCPC->VDU = (tVDU*)calloc(1,sizeof(tVDU));
+    NativeCPC->PSG = (tPSG*)calloc(1,DWORD_UPPER_ALIGN(sizeof(tPSG)));
+    #endif
+
     // Prepare context header
     ContextHeaderP = (tContextHeader*)(contextP + CONTEXT_OFFSET_HEADER);
-
-
-
 
     // Pointer affectation into context memory
     resourcesP = (tContextResources*)(contextP + CONTEXT_OFFSET_RESOURCES);
@@ -382,9 +398,7 @@ tContextResources* resourcesP;
   CPCSTART_TRACE_SHOW_INT(1);
 
   // Pointer affectation into context memory
-  #ifdef __NEWMEMLAYOUT__
-  NativeCPC = (tNativeCPC*)calloc(1,sizeof(tNativeCPC));
-  #else
+  #ifndef __NEWMEMLAYOUT__
   NativeCPC = (tNativeCPC*)(contextP + CONTEXT_OFFSET_NATIVECPC);
   #endif
   sessionFilenameP = (char*)(contextP + CONTEXT_OFFSET_SESSIONFILENAME);
@@ -403,16 +417,12 @@ tContextResources* resourcesP;
 
   NativeCPC->TraceAlertPtr = (tULong)ShowTraceAlert;
   NativeCPC->MemPtrNewPtr = (tMemPtrNewFct)PalmOS_MemPtrNewLarge; //??
-  NativeCPC->MemPtrDeletePtr = (tMemPtrDeleteFct)free;
+  NativeCPC->MemPtrDeletePtr = (tMemPtrDeleteFct)MemPtrFreeLarge;
 
 
   NativeCPC->WinPalettePtr = WinPalettePtr;
   NativeCPC->RGB565PalettePtr = RGB565PalettePtr;
   NativeCPC->SoundCalculateLevelTablesPtr = (tULong)Sound_Calculate_Level_Tables;
-  NativeCPC->HardKeyCPCKeyCodeA = prefP->CPCKeycodeA;
-  NativeCPC->HardKeyCPCKeyCodeB = prefP->CPCKeycodeB;
-  NativeCPC->HardKeyCPCKeyCodeC = prefP->CPCKeycodeC;
-  NativeCPC->HardKeyCPCKeyCodeD = prefP->CPCKeycodeD;
 
   CPCSTART_TRACE_SHOW_INT(3);
 
@@ -519,6 +529,10 @@ void CPCStop(void)
 #  define CPCSTOP_TRACE_SHOW_INT(value)
 #endif /* CPCSTOP_TRACE_ENABLED */
 {
+#ifdef __NEWMEMLAYOUT__
+  tUChar* tmpPointersP[8] ={NULL};
+#endif
+
 	CPCSTOP_TRACE_SHOW_INT(1);
 
   if (NativeCPC != NULL)
@@ -527,7 +541,38 @@ void CPCStop(void)
 
     // Arr�ter l'�mulation.
     Engine_CPCStop(NativeCPC);
+
+#ifdef __NEWMEMLAYOUT__
+
+    tmpPointersP[0] = NativeCPC->Z80;
+    tmpPointersP[1] = NativeCPC->CRTC;
+    tmpPointersP[2] = NativeCPC->GateArray;
+    tmpPointersP[3] = NativeCPC->PPI;
+    tmpPointersP[4] = NativeCPC->VDU;
+    tmpPointersP[5] = NativeCPC->PSG;
+    tmpPointersP[6] = NativeCPC->mode0_table;
+    tmpPointersP[7] = NativeCPC->mode1_table;
+
+    memset(NativeCPC,0,sizeof(tNativeCPC));
+    NativeCPC->Z80 = tmpPointersP[0];
+    NativeCPC->CRTC = tmpPointersP[1];
+    NativeCPC->GateArray = tmpPointersP[2];
+    NativeCPC->PPI = tmpPointersP[3];
+    NativeCPC->VDU = tmpPointersP[4];
+    NativeCPC->PSG = tmpPointersP[5];
+    NativeCPC->mode0_table = tmpPointersP[6];
+    NativeCPC->mode1_table = tmpPointersP[7];
+
+    //memset(NativeCPC->Z80,0,sizeof(tZ80));
+    memset(NativeCPC->CRTC,0,sizeof(tCRTC));
+    memset(NativeCPC->GateArray,0,sizeof(tGateArray));
+    memset(NativeCPC->PPI,0,sizeof(tPPI));
+    memset(NativeCPC->VDU,0,sizeof(tVDU));
+    memset(NativeCPC->PSG,0,sizeof(tPSG));
+
+#else
     NativeCPC = NULL;
+#endif
   }
 
 	CPCSTOP_TRACE_SHOW_INT(3);
@@ -574,6 +619,28 @@ tContextResources* resourcesP;
   }
 
   CPCLASTSTOP_TRACE_SHOW_INT(8);
+
+  MemPtrFree(WinPalettePtr);
+  MemPtrFree(RGB565PalettePtr);
+
+  #ifdef __NEWMEMLAYOUT__
+  free(NativeCPC->Z80->SZ);
+  free(NativeCPC->Z80->SZ_BIT);
+  free(NativeCPC->Z80->SZP);
+  free(NativeCPC->Z80->SZHV_inc);
+  free(NativeCPC->Z80->SZHV_dec);
+  free(NativeCPC->mode0_table);
+  free(NativeCPC->mode1_table);
+  free(NativeCPC->GateArray);
+  free(NativeCPC->CRTC);
+  free(NativeCPC->PPI);
+  free(NativeCPC->VDU);
+  free(NativeCPC->PSG);
+  free(NativeCPC->Z80);
+  free(NativeCPC);
+  NativeCPC = NULL;
+  #endif
+
 
   if (contextP != NULL)
   {
@@ -707,11 +774,11 @@ tUChar RestoreOK = 0;
           CPCCOLDRESET_TRACE_SHOW_INT(8);
 
           // Restore previously saved CPC context
-          // RestoreReturnCode = RestoreCPC(pathP,
-          //                                filenameP,
-          //                                &EmulatorKeysStatus,
-          //                                &RestorePref,
-          //                                contextP);
+           RestoreReturnCode = RestoreCPC(pathP,
+                                          filenameP,
+                                          &EmulatorKeysStatus,
+                                          &RestorePref,
+                                          contextP);
 
           //
           // Restore_OK
@@ -730,26 +797,9 @@ tUChar RestoreOK = 0;
 
             CPCCOLDRESET_TRACE_SHOW_INT(11);
 
-            if (prefP->CPCKeycodeA != NativeCPC->HardKeyCPCKeyCodeA)
-            {
-            	prefP->CPCKeycodeA = NativeCPC->HardKeyCPCKeyCodeA;
-              prefP->PreferencesChanged = 1;
-            }
-            if (prefP->CPCKeycodeB != NativeCPC->HardKeyCPCKeyCodeB)
-            {
-            	prefP->CPCKeycodeB = NativeCPC->HardKeyCPCKeyCodeB;
-              prefP->PreferencesChanged = 1;
-            }
-            if (prefP->CPCKeycodeC != NativeCPC->HardKeyCPCKeyCodeC)
-            {
-            	prefP->CPCKeycodeC = NativeCPC->HardKeyCPCKeyCodeC;
-              prefP->PreferencesChanged = 1;
-            }
-            if (prefP->CPCKeycodeD != NativeCPC->HardKeyCPCKeyCodeD)
-            {
-            	prefP->CPCKeycodeD = NativeCPC->HardKeyCPCKeyCodeD;
-              prefP->PreferencesChanged = 1;
-            }
+            // Restore the hardware keymapping
+            GetSessionKeyMapping(NativeCPC);
+
             prefP->ScreenType = RestorePref.ScreenType;
             prefP->UseParados = RestorePref.UseParados;
             prefP->Use64kMemoryExtension = RestorePref.Use64kMemoryExtension;
@@ -772,8 +822,7 @@ tUChar RestoreOK = 0;
           //
           else
           {
-            //DisplayRestoreError(RestoreReturnCode,
-            //                    &RestorePref);
+            return(sysErrResetIssue);
           }
         }
       }
@@ -918,11 +967,54 @@ UInt16 CPCLoadDiskAndGetCatalog(char* PathnameP, char* FilenameP, char** Cat)
 /*----------------------------------------------------------------------------*/
 
 Err CPCLoadKeymapFromConfigFile(const char* Key, char** Settings)
+/***********************************************************************
+ *
+ *  CPCLoadKeymapFromConfigFile()
+ *
+ ***********************************************************************/
 {
     tDrive* driveP = DriveSelected == DriveA ? NativeCPC->DriveA : NativeCPC->DriveB;
     return(LoadKeymapFromConfigFile(driveP, Key, Settings));
 }
 
+Err CPCSaveSnapshot()
+/***********************************************************************
+ *
+ *  CPCSaveSnapshot()
+ *
+ ***********************************************************************/
+{
+  tDrive* nativedriveP = DriveSelected == DriveA ? NativeCPC->DriveA : NativeCPC->DriveB;
+  tCPCSaveReturnCode errSave;
+  char* filenameP;
+  char* extP;
+
+  if (IsDriveFilenameExist(nativedriveP) == cFalse)
+    return (sysErrParamErr);
+
+  filenameP = (char*)MemPtrNew(MAX_FILE_NAME * sizeof(Char));
+  if (filenameP == NULL)
+  {
+    return (memErrNotEnoughSpace);
+  }
+
+  GetDriveFilename(nativedriveP, filenameP);
+
+  printf("%s\n",filenameP);
+
+  extP = strrchr(filenameP,'.');
+  strcpy(extP,CONTEXT_EXTENSION);
+
+  printf("%s %s\n",filenameP, DEFAULT_CAPRICE_PATH);
+
+  errSave = SaveCPC(DEFAULT_CAPRICE_PATH, filenameP, contextP);
+  free(filenameP);
+
+  if (errSave == Save_OK)
+    return (errNone);
+  else
+    return (memErrNotEnoughSpace);
+}
 
 void CPCSwapDrive(void)
 /***********************************************************************
@@ -965,7 +1057,7 @@ Boolean CPCHandleEvent(event_t* Event)
   // handle the input device events
   if (Event->type == EVENT_TYPE_KEYPAD)
   {
-    printf("CPCHandleEvent %d:%d\n",Event->keypad.pressed, Event->keypad.released);
+    //printf("CPCHandleEvent %d:%d\n",Event->keypad.pressed, Event->keypad.released);
     if (Event->keypad.pressed)
     {
       return KeyDownHandleEvent(Event);

@@ -50,6 +50,7 @@
 
  static int app_init(void)
  {
+
   do {
 
     // Offscreen Buffers allocation
@@ -76,14 +77,8 @@
       continue;
     }
 
-
     // Setup sdcard and display error message on failure
-  	// TODO: Make it nonfatal so user can still browse SPIFFS or so
-
-  	if ((sdcard_init("/sd")) != 0) {
-  		printf("Please insert the sdcard and restart the device.");
-      continue;
-    }
+    sdcard_init("/sd");
 
     // try to start BT
 #ifndef SIM
@@ -122,7 +117,7 @@
     EnableJoystick();
     SystemHalt = 0;
 
-    return 0;
+    return (0);
 
   }//do loop
   while (0);
@@ -134,7 +129,7 @@ static void app_shutdown(void)
 {
 	// stop and deallocate CPC
   AppStop();
-
+  audio_shutdown();
   sdcard_deinit();
 	display_poweroff();
 	system_reboot_to_firmware();
@@ -199,6 +194,7 @@ void app_main_task(void *arg)
   UInt32 FPSCount = 0;
   tULong ASPS;
   tULong numSoundSamples = 0;
+  UInt8 NumFrameSubmitted = 0;
   #endif /* _SHOW_FPS */
   char* indexAutoStartP;
   UInt32 AutoStartDuration = 0;
@@ -209,6 +205,7 @@ void app_main_task(void *arg)
   float ted_p = 0.0;
   float ted_error = 0.0;
   Int32 ted_ctr = 0;
+  UInt8 SdCardMissing = 0;
 
   TicksPerSecond = SysTicksPerSecond();
   TicksPerCycle = TicksPerSecond / CYCLES_PER_SECOND;
@@ -235,6 +232,10 @@ void app_main_task(void *arg)
 #endif
   // Start sound
   SoundPlay(NativeCPC);
+
+  // SD card Check
+  if (!sdcard_present())
+    ttgui_osdRegister("NO SDCARD?!", 5000);
 
 
 #ifdef _PROFILE
@@ -397,6 +398,7 @@ void app_main_task(void *arg)
               // Transfer offscreen to draw window
               ttgui_osdExecute();
               display_update();
+              NumFrameSubmitted++;
             }
             if (!VideoFrameDelay)
             {
@@ -469,12 +471,14 @@ void app_main_task(void *arg)
 #endif
 
 #ifdef _SHOW_FPS
-              printf("%3d|%5d|%4d|",FPS,ASPS,Tacc);
+              printf("%3d|%5d|%4d|%3d",FPS,ASPS,Tacc,timeDelta/NumFrameSubmitted);
               FPS = FPSCount;
               ASPS = numSoundSamples/SND_SAMPLE_SIZE ;
               FPSCount = 0;
               numSoundSamples = 0;
               Tacc=0;
+              timeDelta = 0;
+              NumFrameSubmitted = 0;
 #endif /* _SHOW_FPS */
 
 #ifdef _PROFILE
@@ -697,6 +701,12 @@ void app_main_task(void *arg)
             ttgui_osdRegister(osd_tmp_buf, 1000);
           }
       }
+      else if (event.caprice.event == CapriceEventBrightnessOkEvent)
+      {
+          sprintf(osd_tmp_buf, "Dbl: %d%%",backlight_percentage_get());
+          ttgui_osdRegister(osd_tmp_buf, 1000);
+      }
+
     }
     else if (event.type == EVENT_TYPE_A2DP)
     {
@@ -711,6 +721,7 @@ void app_main_task(void *arg)
           case A2dpEventMediaStarted:
             ttgui_osdString("BT Ready", 1000, SystemHalt);
             ttgui_osdTermTimer();
+#ifndef SIM
             prefP->A2dpMediaStates = a2dp_get_states();
             if (prefP->A2dpMediaStates & 0x01)
             {
@@ -719,7 +730,9 @@ void app_main_task(void *arg)
               rb_reset(rb);
               i2s_set_emu_state_idle();
               a2dp_set_emu_state_running();
+
             }
+#endif
             break;
           case A2dpEventMediaStopped:
             ttgui_osdString("BT Stopped", 1000, SystemHalt);

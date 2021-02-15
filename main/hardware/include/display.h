@@ -18,6 +18,8 @@
       #define RESUME_DISPLAY_FUNCTION display_resume
   #endif
 #endif
+int32_t timeDelta;
+
 void display_init(void);
 void display_poweroff(void);
 void display_clear(uint16_t color);

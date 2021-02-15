@@ -175,14 +175,7 @@ DmResID resID;
   // Z80 structure
   //
 
-  #ifdef __NEWMEMLAYOUT__
-  NativeCPC->Z80 = (tZ80*)calloc(1,DWORD_UPPER_ALIGN(sizeof(tZ80)));
-  NativeCPC->Z80->SZ = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
-  NativeCPC->Z80->SZ_BIT = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
-  NativeCPC->Z80->SZP = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
-  NativeCPC->Z80->SZHV_inc = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
-  NativeCPC->Z80->SZHV_dec = (tUChar*)calloc(1,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
-  #else
+  #ifndef __NEWMEMLAYOUT__
   NativeCPC->Z80 = (tZ80*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80);
   NativeCPC->Z80->SZ = (tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80_SZ);
   NativeCPC->Z80->SZ_BIT = (tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80_SZ_BIT);
@@ -202,11 +195,7 @@ DmResID resID;
   //
   // CRTC structure
   //
-  #ifdef __NEWMEMLAYOUT__
-  NativeCPC->CRTC = (tCRTC*)calloc(1,sizeof(tCRTC));
-  NativeCPC->mode0_table = (tUChar*)calloc(1,SIZETAB_MODE0);
-  NativeCPC->mode1_table = (tUChar*)calloc(1,SIZETAB_MODE1);
-  #else
+  #ifndef __NEWMEMLAYOUT__
   NativeCPC->CRTC = (tCRTC*)(NativeCPC->contextP + CONTEXT_OFFSET_CRTC);
   NativeCPC->mode0_table = (tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_MODE0_TABLE);
   NativeCPC->mode1_table = (tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_MODE1_TABLE);
@@ -217,9 +206,7 @@ DmResID resID;
   //
   // GateArray structure
   //
-  #ifdef __NEWMEMLAYOUT__
-  NativeCPC->GateArray = (tGateArray*)calloc(1,sizeof(tGateArray));
-  #else
+  #ifndef __NEWMEMLAYOUT__
   NativeCPC->GateArray = (tGateArray*)(NativeCPC->contextP + CONTEXT_OFFSET_GATEARRAY);
   #endif
 
@@ -233,9 +220,7 @@ DmResID resID;
   //
   // PPI structure
   //
-  #ifdef __NEWMEMLAYOUT__
-  NativeCPC->PPI = (tPPI*)calloc(1,sizeof(tPPI));
-  #else
+  #ifndef __NEWMEMLAYOUT__
   NativeCPC->PPI = (tPPI*)(NativeCPC->contextP + CONTEXT_OFFSET_PPI);
   #endif
 
@@ -247,9 +232,7 @@ DmResID resID;
   //
   // VDU structure
   //
-  #ifdef __NEWMEMLAYOUT__
-  NativeCPC->VDU = (tVDU*)calloc(1,sizeof(tVDU));
-  #else
+  #ifndef __NEWMEMLAYOUT__
   NativeCPC->VDU = (tVDU*)(NativeCPC->contextP + CONTEXT_OFFSET_VDU);
   #endif
 
@@ -525,9 +508,7 @@ static void audio_init(tNativeCPC* NativeCPC)
 {
 
   printf("audio_init_entered\n");
-#ifdef __NEWMEMLAYOUT__
-  NativeCPC->PSG = (tPSG*)calloc(1,DWORD_UPPER_ALIGN(sizeof(tPSG)));
-#else
+#ifndef __NEWMEMLAYOUT__
   NativeCPC->PSG = (tPSG*)(NativeCPC->contextP + CONTEXT_OFFSET_PSG);
 #endif
 

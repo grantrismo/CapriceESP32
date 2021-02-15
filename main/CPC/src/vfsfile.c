@@ -125,6 +125,26 @@ size_t _fread(_PTR __restrict p, size_t _size, size_t _n, FILE *__restrict f)
     return _n;*/
 }
 
+size_t _fwrite(const _PTR __restrict p , size_t _size, size_t _n, FILE * f) {
+    // i had problems with fwrite (sd write errors, if the datasize is > 0x100)
+
+    size_t size = _size*_n;
+    int written = 0;
+    for (int i = 0; i < size; i+=0x100) {
+        int toWrite = 0x100;
+        if (i + 0x100 > size) toWrite = size%0x100;
+        STOP_DISPLAY_FUNCTION();
+        written +=fwrite(p+i, 1, toWrite, f);
+        RESUME_DISPLAY_FUNCTION();
+    }
+    if (written > 0) {
+        fflush(f);
+        fsync(fileno(f));
+
+    }
+    return written;
+}
+
 char * _fgets(char *__restrict c, int i, FILE *__restrict f)
 {
     STOP_DISPLAY_FUNCTION();
@@ -290,13 +310,30 @@ Err VFSFileGetAttributes(FileRef fileRef, UInt32 *attributesP)
 
 Err VFSFileWrite(FileRef fileRef, UInt32 numBytes, const void *dataP, UInt32 *numBytesWrittenP)
 {
+  *numBytesWrittenP = _fwrite(dataP , 1, numBytes, fileRef);
+  printf("VFSFileWrite: %d %d %p\n",*numBytesWrittenP, numBytes, fileRef);
   return errNone;
 }
 
 /************************************************************************************/
 Err VFSFileSeek(FileRef fileRef, FileOrigin origin, Int32 offset)
 {
-  return errNone;
+  Err Error;
+
+  switch (origin)
+  {
+    case vfsOriginCurrent:
+      Error = _fseek(fileRef,offset,SEEK_CUR);
+      break;
+
+    case vfsOriginEnd:
+      Error = _fseek(fileRef,offset,SEEK_END);
+    	break;
+
+    default: //vfsOriginBeginning
+      Error = _fseek(fileRef,offset,SEEK_SET);
+  }
+  return(Error);
 }
 
 /************************************************************************************/

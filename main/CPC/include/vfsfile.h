@@ -81,6 +81,7 @@ typedef UInt16	            FileOrigin;
 #define _fseek fseek
 #define _ftell ftell
 #define _fread fread
+#define _fwrite fwrite
 #define _fgets fgets
 #define _fputs fputs
 #define _remove remove
@@ -94,6 +95,7 @@ extern int _fclose(FILE* file) SECTION_FILES;
 extern int _fseek(FILE * f, long a, int b) SECTION_FILES;
 extern long _ftell( FILE * f) SECTION_FILES;
 extern size_t _fread(_PTR __restrict p, size_t _size, size_t _n, FILE *__restrict f) SECTION_FILES;
+extern size_t _fwrite(const _PTR __restrict p , size_t _size, size_t _n, FILE * f) SECTION_FILES;
 extern char * _fgets(char *__restrict c, int i, FILE *__restrict f) SECTION_FILES;
 extern int _fputs(const char *__restrict c, FILE *__restrict f) SECTION_FILES;
 extern int _remove(const char * f) SECTION_FILES;

@@ -35,6 +35,7 @@
 #include "Routines.h"
 
 #include "event.h"
+#include "backlight.h"
 
 //#include "Display.h"
 //#include "Resources.h"
@@ -692,19 +693,14 @@ tULong NbEmulatorKeys = NB_CPC_COLOURED_KEYS;
 
 tEmulatorKeysStatus EmulatorKeysStatus;
 
-static tUShort cpcKeyUp;
-static tUShort cpcKeyDown;
-static tUShort cpcKeyRight;
-static tUShort cpcKeyLeft;
-static tUShort cpcKeyCenter;      // A
-static tUShort cpcKeyCenterEx;    // B
-static tUShort cpcKeyStart;       // Start
-static tUShort cpcKeySelect;      // Select
-
-static UInt32 HardCPCKeyCodeMaskA;
-static UInt32 HardCPCKeyCodeMaskB;
-static UInt32 HardCPCKeyCodeMaskC;
-static UInt32 HardCPCKeyCodeMaskD;
+static tUChar cpcKeyUp;
+static tUChar cpcKeyDown;
+static tUChar cpcKeyRight;
+static tUChar cpcKeyLeft;
+static tUChar cpcKeyCenter;      // A
+static tUChar cpcKeyCenterEx;    // B
+static tUChar cpcKeyStart;       // Start
+static tUChar cpcKeySelect;      // Select
 
 //
 // CPC Keyboards
@@ -1051,6 +1047,29 @@ const tKeySetting* settingP;
 }
 /*----------------------------------------------------------------------------*/
 
+void SetSessionKeyMapping(tNativeCPC* NativeCPC)
+{
+  NativeCPC->SessionCPCKeyUp = cpcKeyUp;
+  NativeCPC->SessionCPCKeyDown = cpcKeyDown;
+  NativeCPC->SessionCPCKeyRight = cpcKeyRight;
+  NativeCPC->SessionCPCKeyLeft = cpcKeyLeft;
+  NativeCPC->SessionCPCKeyCenter = cpcKeyCenter;
+  NativeCPC->SessionCPCKeyCenterEx = cpcKeyCenterEx;
+  NativeCPC->SessionCPCKeyStart = cpcKeyStart;
+  NativeCPC->SessionCPCKeySelect = cpcKeySelect;
+}
+
+void GetSessionKeyMapping(tNativeCPC* NativeCPC)
+{
+  cpcKeyUp = NativeCPC->SessionCPCKeyUp;
+  cpcKeyDown = NativeCPC->SessionCPCKeyDown;
+  cpcKeyRight = NativeCPC->SessionCPCKeyRight;
+  cpcKeyLeft = NativeCPC->SessionCPCKeyLeft;
+  cpcKeyCenter = NativeCPC->SessionCPCKeyCenter;
+  cpcKeyCenterEx = NativeCPC->SessionCPCKeyCenterEx;
+  cpcKeyStart = NativeCPC->SessionCPCKeyStart;
+  cpcKeySelect = NativeCPC->SessionCPCKeySelect;
+}
 
 tUShort SetKeyMapping(char* mappingString)
 {
@@ -1129,6 +1148,7 @@ void EnableSpecialKeymapping(void)
        if (i==7) {cpcKeyCenterEx = cpc_kbd[SetKeyMapping(Settings)]; continue;}
      }
    }
+   SetSessionKeyMapping(NativeCPC);
  }
 
 void EnableJoystick(void)
@@ -1152,6 +1172,7 @@ UInt32 OldKeyState = ~0;
   cpcKeyRight = cpc_kbd[CPC_KEY_J0_RIGHT];
   cpcKeyLeft = cpc_kbd[CPC_KEY_J0_LEFT];
   cpcKeyCenter = cpc_kbd[CPC_KEY_J0_FIRE1];
+  SetSessionKeyMapping(NativeCPC);
 
 }
 /*----------------------------------------------------------------------------*/
@@ -1187,6 +1208,7 @@ const tUChar CenterKeys[] =
   cpcKeyRight = cpc_kbd[CPC_KEY_CUR_RIGHT];
   cpcKeyLeft = cpc_kbd[CPC_KEY_CUR_LEFT];
   cpcKeyCenter = cpc_kbd[CenterKeys[prefP->RockerCenterKeyIndex]];
+  SetSessionKeyMapping(NativeCPC);
 
 }
 /*----------------------------------------------------------------------------*/
@@ -1399,17 +1421,71 @@ UInt32 keyDiff;
         }
       }
   	}
+
     if (prefP->SoundRenderer == 0)
       CPCPushEvent(CapriceEventVolumeOkEvent);
     else
       CPCPushEvent(CapriceEventVolumeFailEvent);
   }
 
+  //
+  // Brightness adjust
+  //
+
+  if (keyState & (keyBitRockerMenuOnly))
+  {
+    if (!AutoToggleActive)
+    {
+      if (keyDiff & (keyBitRockerRight))
+      {
+      	// Rocker RIGHT pushed = Brightness raised
+        if (keyState & (keyBitRockerRight) )
+        {
+          backlight_percentage_increase(1);
+          CPCPushEvent(CapriceEventBrightnessOkEvent);
+          return;
+        }
+      }
+      else if (keyDiff & (keyBitRockerUp))
+      {
+        // Rocker UP pushed = Brightness fast raised
+        if (keyState & (keyBitRockerUp))
+        {
+          backlight_percentage_increase(10);
+          CPCPushEvent(CapriceEventBrightnessOkEvent);
+          return;
+        }
+      }
+      else if (keyDiff & (keyBitRockerLeft))
+      {
+        // Rocker LEFT pushed = Brightness lowered
+        if (keyState & (keyBitRockerLeft))
+        {
+          backlight_percentage_decrease(1);
+          CPCPushEvent(CapriceEventBrightnessOkEvent);
+          return;
+        }
+      }
+      else if (keyDiff & (keyBitRockerDown))
+      {
+        // Rocker DOWN pushed = Brightness lowered
+        if (keyState & (keyBitRockerDown))
+        {
+          backlight_percentage_decrease(10);
+          CPCPushEvent(CapriceEventBrightnessOkEvent);
+          return;
+        }
+      }
+  	}
+  }
+
+  //
   // Rocker attached to?
+  //
   if (NewRockerAttach == RockerAsJoyOrCursors)
   {
     // Not MENU button pressed?
-    if ((keyState & KEYPAD_MENU) == 0)
+    if ((keyState & keyBitRockerMenuOnly) == 0)
     {
       // Rocker UP...
       if (keyDiff & (keyBitRockerUp))

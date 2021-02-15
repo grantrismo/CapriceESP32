@@ -41,7 +41,7 @@ void cmf_free()
 ***********************************************************************/
 {
   if (cmf_header_base != NULL)
-    free(cmf_header_base);
+    MemPtrFreeLarge(cmf_header_base);
 
   cmf_cheat_base = NULL;
   cmf_poke_base = NULL;

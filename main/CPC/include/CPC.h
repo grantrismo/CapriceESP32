@@ -92,6 +92,7 @@ extern tUChar CPCPeek(tULong addr);
 extern void AppStop(void);
 extern Int32 SoundRender(UInt8 *data, Int32 len);
 extern Err CPCSwitchAudio(UInt8 SinkId);
+extern Err CPCSaveSnapshot();
 
 //extern void SetRenderingParameters(tUChar Rendering);
 

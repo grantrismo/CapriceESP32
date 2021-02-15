@@ -81,6 +81,20 @@ Err MemPtrNewLarge(UInt32 size,
   return errNone;
 }
 
+void MemPtrFreeLarge(void* newPtr)
+/***********************************************************************
+ *
+ *  MemPtrFreeLarge
+ *
+ ***********************************************************************/
+{
+  if (newPtr != NULL)
+#ifdef SIM
+  free(newPtr);
+#else
+  heap_caps_free(newPtr);
+#endif
+}
 
 tVoid MemSet(tUChar* destP,
                     tULong numBytes,

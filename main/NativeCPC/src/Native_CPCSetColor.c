@@ -267,10 +267,10 @@ tUShort n;
   }
 
   // Update palette
-  for (n = 0; n < GA_INK_VALUES_NBELEMENT; n++)
-  { // loop for all colours + border
-		NativeCPC->GateArray->palette[n] = NativeCPC->colours[NativeCPC->GateArray->ink_values[n]];
-  }
+  //for (n = 0; n < GA_INK_VALUES_NBELEMENT; n++)
+  //{ // loop for all colours + border
+		//NativeCPC->GateArray->palette[n] = NativeCPC->colours[NativeCPC->GateArray->ink_values[n]];
+  //}
 
   #ifdef _TESTU
     return PerformTestU(NativeCPC);

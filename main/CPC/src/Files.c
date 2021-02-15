@@ -218,7 +218,7 @@ void ReindexPointersArea(tReindexOperationParameters* paramP)
   {
     // Get pointer address
 #ifdef SIM
-    uint64_t ptr = (UInt32)*paramP->srcAreaP;
+    uint64_t ptr = (uint64_t)*paramP->srcAreaP;
 #else
     UInt32 ptr = (UInt32)*paramP->srcAreaP;
 #endif
@@ -925,7 +925,6 @@ Err Result;
   DiskOperationP->NativeCPC = NativeCPC;
   DiskOperationP->disk_size = EndianSwap32(DiskSize);
   DiskOperationP->DiskContentP = (tUChar*)EndianSwap32(DiskContentP);
-
   //
   // Disk load operation
   //
@@ -1294,6 +1293,27 @@ tULong Flags = 0;
   Flags |= CONTEXT_FLAG_TRACE;
 #endif /* _TRACE */
 
+  // Set the CONTEXT
+  #ifdef __NEWMEMLAYOUT__
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80),(tUChar*)NativeCPC->Z80,DWORD_UPPER_ALIGN(sizeof(tZ80)));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80_SZ),(tUChar*)NativeCPC->Z80->SZ ,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80_SZ_BIT),(tUChar*)NativeCPC->Z80->SZ_BIT,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80_SZP),(tUChar*)NativeCPC->Z80->SZP,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80_SZHV_inc),(tUChar*)NativeCPC->Z80->SZHV_inc,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80_SZHV_dec),(tUChar*)NativeCPC->Z80->SZHV_dec,DWORD_UPPER_ALIGN(SIZETAB_Z80TABLE));
+
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_CRTC), (tUChar*)NativeCPC->CRTC,sizeof(tCRTC));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_MODE0_TABLE),(tUChar*)NativeCPC->mode0_table,SIZETAB_MODE0);
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_MODE1_TABLE),(tUChar*)NativeCPC->mode1_table,SIZETAB_MODE1);
+
+  memcpy((tUChar*)(contextP + CONTEXT_OFFSET_NATIVECPC),(tUChar*)NativeCPC,sizeof(tNativeCPC));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_GATEARRAY),(tUChar*)NativeCPC->GateArray,sizeof(tGateArray));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_PPI),(tUChar*)NativeCPC->PPI,sizeof(tPPI));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_VDU),(tUChar*)NativeCPC->VDU,sizeof(tVDU));
+  memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_PSG),(tUChar*)NativeCPC->PSG,DWORD_UPPER_ALIGN(sizeof(tPSG)));
+  //memcpy((tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_SND_BUFFER),(tUChar*)SoundBufferP[0], CONTEXT_SIZE_SND_BUFFER);
+  #endif
+
   // Prepare context header
   contextHeaderP = (tContextHeader*)(contextP + CONTEXT_OFFSET_HEADER);
   contextHeaderP->Flags = EndianSwap32(Flags);
@@ -1322,6 +1342,7 @@ tULong Flags = 0;
       ReturnCode = Write_Error;
       continue;
     }
+    printf("3\n");
 
     // Save Drive A Data
     driveP = (tDrive*)(contextP + CONTEXT_OFFSET_DRIVE_A);
@@ -1405,6 +1426,7 @@ tCPCRestoreReturnCode RestoreCPC(const char* pathP,
 #endif /* RESTORECPC_TRACE_ENABLED */
 {
 //tNativeCPC* NativeCPC = (tNativeCPC*)(contextP + CONTEXT_OFFSET_NATIVECPC);
+
 const tRestoreCPCSection* sectionP;
 tCPCRestoreReturnCode ReturnCode = Restore_OK;
 Err Result;
@@ -1420,6 +1442,18 @@ tBool loadDiskImageA;
 tBool loadDiskImageB;
 
   RESTORECPC_TRACE_SHOW_INT(1);
+
+  // map the dynamic section
+#ifdef __NEWMEMLAYOUT__
+  memcpy((tUChar*)(contextP + CONTEXT_OFFSET_NATIVECPC),(tUChar*)NativeCPC,sizeof(tNativeCPC));
+  memcpy((tUChar*)(contextP + CONTEXT_OFFSET_Z80),(tUChar*)NativeCPC->Z80,(sizeof(tZ80)));
+  memcpy((tUChar*)(contextP + CONTEXT_OFFSET_CRTC), (tUChar*)NativeCPC->CRTC,sizeof(tCRTC));
+
+  memcpy((tUChar*)(contextP + CONTEXT_OFFSET_GATEARRAY),(tUChar*)NativeCPC->GateArray,sizeof(tGateArray));
+  memcpy((tUChar*)(contextP + CONTEXT_OFFSET_PPI),(tUChar*)NativeCPC->PPI,sizeof(tPPI));
+  memcpy((tUChar*)(contextP + CONTEXT_OFFSET_VDU),(tUChar*)NativeCPC->VDU,sizeof(tVDU));
+  memcpy((tUChar*)(contextP + CONTEXT_OFFSET_PSG),(tUChar*)NativeCPC->PSG,(sizeof(tPSG)));
+#endif
 
   Result = OpenFile(pathP,
                     filenameP,
@@ -1510,7 +1544,6 @@ tBool loadDiskImageB;
   	  Result = memErrNotEnoughSpace;
   	  continue;
   	}
-
     Result = VFSFileRead(ContextFileRef,
                          RESTORECPC_NATIVE_CPC_SIZE,
                          (void*)readNativeCPCP,
@@ -1580,10 +1613,10 @@ tBool loadDiskImageB;
     if (ReturnCode != Restore_OK) continue;
 
     RESTORECPC_TRACE_SHOW_INT(6);
-
     //
     // Drive A
     //
+
     ReturnCode = RestoreCPC_Drive(ContextFileRef,
                                   (tDrive*)EndianSwap32(contextP + CONTEXT_OFFSET_DRIVE_A),
                                   NativeCPC,
@@ -1644,7 +1677,7 @@ tBool loadDiskImageB;
 
     RESTORECPC_TRACE_SHOW_INT(13);
 
-    NativeCPC->RestorationPerformed = 1;
+    //NativeCPC->RestorationPerformed = 1;
   }
   while (0);
 
@@ -1663,6 +1696,59 @@ tBool loadDiskImageB;
   VFSFileClose(ContextFileRef);
 
   RESTORECPC_TRACE_SHOW_INT(15);
+
+  /*
+  printf("Done!!\n");
+  //#ifdef __NEWMEMLAYOUT__
+  printf("*E*Native->Z80p: %p\n", NativeCPC->Z80);
+  printf("*E*NativeCPC->Z80->SZ %p\n", NativeCPC->Z80->SZ);
+
+  for (int i=0;i<sizeof(tZ80);i++)
+  {
+    printf("%2x", *(tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_Z80 + i));
+    if ((i%16)==0 && i>0)
+      printf("\n");
+    else
+      printf(",");
+  }
+  printf("\n");
+
+  for (int i=0;i<sizeof(tZ80);i++)
+  {
+    printf("%2x", *((tUChar*)(NativeCPC->Z80) + i));
+    if ((i%16)==0 && i>0)
+      printf("\n");
+    else
+      printf(",");
+  }
+  printf("\n");
+  */
+
+  // forces (ghost n' goblins)
+  //memcpy(contextP+0x19e8,contextP+0x19e8-16,6); // no effect so far?
+  //memcpy(contextP+0x19e0,contextP+0x19e8-16,6); // noe effect so far?
+  //memset(contextP+0x12a0,1,1); // ?? in combination with 0x12a4 -> segmentation fault!
+  //memset(contextP+0x12a4,1,1);  // freeze but shows init screen in wrong color -> same as on dynamic memory?
+
+  //printf("CONTEXT_OFFSET_NATIVECPC: %x\n",CONTEXT_OFFSET_NATIVECPC);
+  //printf("CONTEXT_OFFSET_Z80: %x\n", CONTEXT_OFFSET_Z80);
+
+#ifdef __NEWMEMLAYOUT__
+  memcpy((tUChar*)NativeCPC,(tUChar*)(contextP + CONTEXT_OFFSET_NATIVECPC),sizeof(tNativeCPC));
+  memcpy((tUChar*)NativeCPC->Z80,(tUChar*)(contextP + CONTEXT_OFFSET_Z80),(sizeof(tZ80)));
+  memcpy((tUChar*)NativeCPC->CRTC, (tUChar*)(contextP + CONTEXT_OFFSET_CRTC),sizeof(tCRTC));
+  memcpy((tUChar*)NativeCPC->GateArray,(tUChar*)(contextP + CONTEXT_OFFSET_GATEARRAY),sizeof(tGateArray));
+  memcpy((tUChar*)NativeCPC->PPI,(tUChar*)(contextP + CONTEXT_OFFSET_PPI),sizeof(tPPI));
+  memcpy((tUChar*)NativeCPC->VDU,(tUChar*)(contextP + CONTEXT_OFFSET_VDU),sizeof(tVDU));
+  memcpy((tUChar*)NativeCPC->PSG,(tUChar*)(contextP + CONTEXT_OFFSET_PSG),sizeof(tPSG));
+  //memcpy((tUChar*)SoundBufferP[0], (tUChar*)(NativeCPC->contextP + CONTEXT_OFFSET_SND_BUFFER),CONTEXT_SIZE_SND_BUFFER);
+  #endif
+
+  NativeCPC->FirstInitToPerform = 1;
+  NativeCPC->RestorationPerformed = 1;
+
+// check if we have the same
+//SaveCPC(pathP,"__restore_context_dyn.cpc",contextP);
 
   return (ReturnCode);
 }
@@ -1694,7 +1780,7 @@ Err Result;
 
   RESTORECPC_SECTION_TRACE_SHOW_INT(1);
 
-  // Pass through STATIC areaSize
+  // Pass through STATIC areaSize,
   if (sectionP->StaticAreaSize)
   {
     Result = VFSFileSeek(ContextFileRef,
@@ -1770,6 +1856,7 @@ static tCPCRestoreReturnCode RestoreCPC_Drive(FileRef ContextFileRef,
  *  RestoreCPC_Drive
  *
  ***********************************************************************/
+
 #undef RESTORECPC_DRIVE_TRACE_ENABLED
 //#define RESTORECPC_DRIVE_TRACE_ENABLED
 
@@ -1779,6 +1866,7 @@ static tCPCRestoreReturnCode RestoreCPC_Drive(FileRef ContextFileRef,
 #  define RESTORECPC_DRIVE_TRACE_SHOW_INT(value)
 #endif /* RESTORECPC_DRIVE_TRACE_ENABLED */
 {
+
 tDrive* driveP = (tDrive*)EndianSwap32(NativeDriveP);
 tDrive* readDriveP;
 UInt32 numBytesRead;
@@ -1830,9 +1918,12 @@ tCPCRestoreReturnCode ReturnCode = Restore_OK;
     {
       RESTORECPC_DRIVE_TRACE_SHOW_INT(6);
 
+
   	  MemMove((tUChar*)driveP,
   	          (tUChar*)readDriveP,
   	          CONTEXT_SIZE_DRIVE);
+
+      RESTORECPC_DRIVE_TRACE_SHOW_INT(66);
 
   	  *LoadDiskImageP = cTrue;
 
@@ -1841,7 +1932,7 @@ tCPCRestoreReturnCode ReturnCode = Restore_OK;
   }
   while(0);
 
-  MemPtrFree(readDriveP);
+  MemPtrFreeLarge(readDriveP);
 
   RESTORECPC_DRIVE_TRACE_SHOW_INT(8);
 
@@ -2191,7 +2282,7 @@ UInt32 rowIndex;
   {
   	if (pScreenshot)
   	{
-  	  MemPtrFree(pScreenshot);
+  	  MemPtrFreeLarge(pScreenshot);
   	}
   }
 

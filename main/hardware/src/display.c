@@ -1,3 +1,9 @@
+#pragma GCC optimize ("O3")
+
+#include "display.h"
+//#include "image_sd_card_alert.h"
+//#include "image_sd_card_unknown.h"
+
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -14,6 +20,7 @@
 
 #include "CPC.h"
 #include "Keyboard.h"
+#include "Routines.h"
 
 static const gpio_num_t SPI_PIN_NUM_MISO = GPIO_NUM_19;
 static const gpio_num_t SPI_PIN_NUM_MOSI = GPIO_NUM_23;
@@ -23,47 +30,61 @@ static const gpio_num_t LCD_PIN_NUM_CS = GPIO_NUM_5;
 static const gpio_num_t LCD_PIN_NUM_DC = GPIO_NUM_21;
 static const int LCD_SPI_CLOCK_RATE = SPI_MASTER_FREQ_40M;
 
-#define MADCTL_MY 0x80
-#define MADCTL_MX 0x40
-#define MADCTL_MV 0x20
-#define MADCTL_ML 0x10
-#define MADCTL_MH 0x04
-#define TFT_RGB_BGR 0x08
 
-void videoTask(void* argP);
-
-static spi_transaction_t trans[8];
+#define SPI_TRANSACTION_COUNT (4)
+static spi_transaction_t trans[SPI_TRANSACTION_COUNT];
 static spi_device_handle_t spi;
-static TaskHandle_t xTaskToNotify = NULL;
-static bool waitForTransactions = false;
-static uint16_t VideoTaskCommand = 1;
-static QueueHandle_t videoQueue;
+
+
+#define LINE_BUFFERS (2)
+#define LINE_COUNT (5)
+#define LINE_BUFFER_SIZE (SCREEN_WIDTH*LINE_COUNT)
+uint16_t* line[LINE_BUFFERS];
+QueueHandle_t spi_queue;
+QueueHandle_t line_buffer_queue;
+SemaphoreHandle_t spi_count_semaphore;
+SemaphoreHandle_t display_mutex = NULL;
+spi_transaction_t global_transaction;
+bool use_polling = false;
+bool isBackLightIntialized = false;
 
 uint8_t stopDisplay = 0;
-SemaphoreHandle_t odroid_spi_mutex = NULL;
-SemaphoreHandle_t display_mutex = NULL;
-#define PARALLEL_LINES (5)
-
-static uint16_t *pbuf[2];
-
+int32_t timeDelta = 0;
+static uint16_t VideoTaskCommand = 1;
+static QueueHandle_t videoQueue;
+void videoTask(void* argP);
 /*
- The ILI9341 needs a bunch of command/argument values to be initialized. They are stored in this
- struct.
+ The ILI9341 needs a bunch of command/argument values to be initialized. They are stored in this struct.
 */
 typedef struct {
-	uint8_t cmd;
-	uint8_t data[128];
-	uint8_t databytes; // No of data in data; bit 7 = delay after set; 0xFF = end of cmds.
+    uint8_t cmd;
+    uint8_t data[128];
+    uint8_t databytes; //No of data in data; bit 7 = delay after set; 0xFF = end of cmds.
 } ili_init_cmd_t;
 
-#define TFT_CMD_SWRESET 0x01
+#define TFT_CMD_SWRESET	0x01
 #define TFT_CMD_SLEEP 0x10
 #define TFT_CMD_DISPLAY_OFF 0x28
 
-DRAM_ATTR static const ili_init_cmd_t ili_sleep_cmds[] = {
-    {TFT_CMD_SWRESET, {0}, 0x80}, {TFT_CMD_DISPLAY_OFF, {0}, 0x80}, {TFT_CMD_SLEEP, {0}, 0x80}, {0, {0}, 0xff}};
+#define MADCTL_MY  0x80
+#define MADCTL_MX  0x40
+#define MADCTL_MV  0x20
+#define MADCTL_ML  0x10
+#define MADCTL_MH 0x04
+#define TFT_RGB_BGR 0x08
 
-// 2.4" LCD
+DRAM_ATTR static const ili_init_cmd_t ili_sleep_cmds[] = {
+    {TFT_CMD_SWRESET, {0}, 0x80},
+    {TFT_CMD_DISPLAY_OFF, {0}, 0x80},
+    {TFT_CMD_SLEEP, {0}, 0x80},
+    {0, {0}, 0xff}
+};
+
+
+/*
+ CONFIG_LCD_DRIVER_CHIP_ODROID_GO
+*/
+
 DRAM_ATTR static const ili_init_cmd_t ili_init_cmds[] = {
     // VCI=2.8V
     //************* Start Initial Sequence **********//
@@ -74,339 +95,362 @@ DRAM_ATTR static const ili_init_cmd_t ili_init_cmds[] = {
     {0xCB, {0x39, 0x2c, 0x00, 0x34, 0x02}, 5},
     {0xF7, {0x20}, 1},
     {0xEA, {0x00, 0x00}, 2},
-    {0xC0, {0x1B}, 1},					// Power control   //VRH[5:0]
-    {0xC1, {0x12}, 1},					// Power control   //SAP[2:0];BT[3:0]
-    {0xC5, {0x32, 0x3C}, 2},				// VCM control
-    {0xC7, {0x91}, 1},					// VCM control2
-    {0x36, {(MADCTL_MV | MADCTL_MY | TFT_RGB_BGR)}, 1}, // Memory Access Control
+    {0xC0, {0x1B}, 1},    //Power control   //VRH[5:0]
+    {0xC1, {0x12}, 1},    //Power control   //SAP[2:0];BT[3:0]
+    {0xC5, {0x32, 0x3C}, 2},    //VCM control
+    {0xC7, {0x91}, 1},    //VCM control2
+    {0x36, {(MADCTL_MV | MADCTL_MY | TFT_RGB_BGR)}, 1},    // Memory Access Control
     {0x3A, {0x55}, 1},
-    {0xB1, {0x00, 0x1B}, 2}, // Frame Rate Control (1B=70, 1F=61, 10=119)
-    {0xB6, {0x0A, 0xA2}, 2}, // Display Function Control
+    {0xB1, {0x00, 0x1F}, 2},  // Frame Rate Control (1B=70, 1F=61, 10=119)
+    {0xB6, {0x0A, 0xA2}, 2},    // Display Function Control
     {0xF6, {0x01, 0x30}, 2},
-    {0xF2, {0x00}, 1}, // 3Gamma Function Disable
-    {0x26, {0x01}, 1}, // Gamma curve selected
+    {0xF2, {0x00}, 1},    // 3Gamma Function Disable
+    {0x26, {0x01}, 1},     //Gamma curve selected
 
-    // Set Gamma
+    //Set Gamma
     {0xE0, {0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1, 0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00}, 15},
     {0XE1, {0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1, 0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F}, 15},
 
-    {0x11, {0}, 0x80}, // Exit Sleep
-    {0x29, {0}, 0x80}, // Display on
+    {0x11, {0}, 0x80},    //Exit Sleep
+    {0x29, {0}, 0x80},    //Display on
 
-    {0, {0}, 0xff}};
+    {0, {0}, 0xff}
+};
 
 
-void display_lock()
+static inline uint16_t* line_buffer_get()
 {
-    if (!display_mutex)
-    {
-        display_mutex = xSemaphoreCreateMutex();
-        if (!display_mutex) abort();
+    uint16_t* buffer;
+    if (use_polling) {
+        return line[0];
     }
 
-    if (xSemaphoreTake(display_mutex, portMAX_DELAY) != pdTRUE)
+    if (xQueueReceive(line_buffer_queue, &buffer, 1000 / portTICK_RATE_MS) != pdTRUE)
     {
+        abort();
+    }
 
+    return buffer;
+}
+
+static inline void line_buffer_put(uint16_t* buffer)
+{
+    if (xQueueSend(line_buffer_queue, &buffer, 1000 / portTICK_RATE_MS) != pdTRUE)
+    {
         abort();
     }
 }
 
-void display_unlock()
+static void spi_task(void *arg)
 {
-    if (!display_mutex) abort();
-    xSemaphoreGive(display_mutex);
-}
-void display_stop()
-{
-    //display_lock();
-    //stopDisplay = 1;
-    //display_unlock();
-		xSemaphoreTake(odroid_spi_mutex,portMAX_DELAY);
+    printf("%s: Entered.\n", __func__);
 
-}
-void display_resume()
-{
-    //stopDisplay = 0;
-		xSemaphoreGive(odroid_spi_mutex);
+    uint16_t* param;
+    while(1)
+    {
+        // Ensure only LCD transactions are pulled
+        if(xSemaphoreTake(spi_count_semaphore, portMAX_DELAY) == pdTRUE )
+        {
+            spi_transaction_t* t;
 
-}
+            esp_err_t ret = spi_device_get_trans_result(spi, &t, portMAX_DELAY);
+            assert(ret==ESP_OK);
 
+            int dc = (int)t->user & 0x80;
+            if(dc)
+            {
+                line_buffer_put((uint16_t*)t->tx_buffer);
+            }
 
-// Send a command to the ILI9341. Uses spi_device_transmit, which waits until
-// the transfer is complete.
-static void ili_cmd(spi_device_handle_t spi, const uint8_t cmd)
-{
-	esp_err_t ret;
-	spi_transaction_t t;
-	memset(&t, 0, sizeof(t));	   // Zero out the transaction
-	t.length = 8;			    // Command is 8 bits
-	t.tx_buffer = &cmd;		    // The data is the cmd itself
-	t.user = (void *)0;		    // D/C needs to be set to 0
-	ret = spi_device_transmit(spi, &t); // Transmit!
-	assert(ret == ESP_OK);		    // Should have had no issues.
-}
+            if(xQueueSend(spi_queue, &t, portMAX_DELAY) != pdPASS)
+            {
+                abort();
+            }
+        }
+        else
+        {
+            printf("%s: xSemaphoreTake failed.\n", __func__);
+        }
+    }
 
-// Send data to the ILI9341. Uses spi_device_transmit, which waits until the
-// transfer is complete.
-static void ili_data(spi_device_handle_t spi, const uint8_t *data, int len)
-{
-	esp_err_t ret;
-	spi_transaction_t t;
-	if (len == 0)
-		return;			    // No need to send anything
-	memset(&t, 0, sizeof(t));	   // Zero out the transaction
-	t.length = len * 8;		    // Len is in bytes, transaction length is in bits.
-	t.tx_buffer = data;		    // Data
-	t.user = (void *)1;		    // D/C needs to be set to 1
-	ret = spi_device_transmit(spi, &t); // Transmit!
-	assert(ret == ESP_OK);		    // Should have had no issues.
+    printf("%s: Exiting.\n", __func__);
+    vTaskDelete(NULL);
+
+    while (1) {}
 }
 
-// This function is called (in irq context!) just before a transmission starts.
-// It will set the D/C line to the value indicated in the user field.
+static void spi_initialize()
+{
+    spi_queue = xQueueCreate(SPI_TRANSACTION_COUNT, sizeof(void*));
+    if(!spi_queue) abort();
+
+
+    line_buffer_queue = xQueueCreate(LINE_BUFFERS, sizeof(void*));
+    if(!line_buffer_queue) abort();
+
+    spi_count_semaphore = xSemaphoreCreateCounting(SPI_TRANSACTION_COUNT, 0);
+    if (!spi_count_semaphore) abort();
+
+    xTaskCreatePinnedToCore(&spi_task, "spi_task", 1024 + 768, NULL, 5, NULL, 0);
+}
+
+
+
+static inline spi_transaction_t* spi_get_transaction()
+{
+    spi_transaction_t* t;
+
+    if (use_polling) {
+        t = &global_transaction;
+    } else {
+        xQueueReceive(spi_queue, &t, portMAX_DELAY);
+    }
+
+    memset(t, 0, sizeof(*t));
+
+    return t;
+}
+
+static inline void spi_put_transaction(spi_transaction_t* t)
+{
+    t->rx_buffer = NULL;
+    t->rxlength = t->length;
+
+    if (t->flags & SPI_TRANS_USE_TXDATA)
+    {
+        t->flags |= SPI_TRANS_USE_RXDATA;
+    }
+
+    if (use_polling) {
+        spi_device_polling_transmit(spi, t);
+    } else {
+        esp_err_t ret = spi_device_queue_trans(spi, t, portMAX_DELAY);
+        assert(ret==ESP_OK);
+
+        xSemaphoreGive(spi_count_semaphore);
+    }
+}
+
+
+//Send a command to the ILI9341. Uses spi_device_transmit, which waits until the transfer is complete.
+static void ili_cmd(const uint8_t cmd)
+{
+    spi_transaction_t* t = spi_get_transaction();
+
+    t->length = 8;                     //Command is 8 bits
+    t->tx_data[0] = cmd;               //The data is the cmd itself
+    t->user = (void*)0;                //D/C needs to be set to 0
+    t->flags = SPI_TRANS_USE_TXDATA;
+
+    spi_put_transaction(t);
+}
+
+//Send data to the ILI9341. Uses spi_device_transmit, which waits until the transfer is complete.
+static void ili_data(const uint8_t *data, int len)
+{
+    if (len)
+    {
+        spi_transaction_t* t = spi_get_transaction();
+
+        if (len < 5)
+        {
+            for (int i = 0; i < len; ++i)
+            {
+                t->tx_data[i] = data[i];
+            }
+            t->length = len * 8;               //Len is in bytes, transaction length is in bits.
+            t->user = (void*)1;                //D/C needs to be set to 1
+            t->flags = SPI_TRANS_USE_TXDATA;
+        }
+        else
+        {
+            t->length = len * 8;               //Len is in bytes, transaction length is in bits.
+            t->tx_buffer = data;               //Data
+            t->user = (void*)1;                //D/C needs to be set to 1
+            t->flags = 0;
+        }
+
+        spi_put_transaction(t);
+    }
+}
+
+//This function is called (in irq context!) just before a transmission starts. It will
+//set the D/C line to the value indicated in the user field.
 static void ili_spi_pre_transfer_callback(spi_transaction_t *t)
 {
-	int dc = (int)t->user;
-	gpio_set_level(LCD_PIN_NUM_DC, dc);
+    int dc=(int)t->user & 0x01;
+    gpio_set_level(LCD_PIN_NUM_DC, dc);
 }
 
-static void ili_spi_post_transfer_callback(spi_transaction_t *t)
-{
-	if (xTaskToNotify && t == &trans[7]) {
-		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-		/* Notify the task that the transmission is complete. */
-		vTaskNotifyGiveFromISR(xTaskToNotify, &xHigherPriorityTaskWoken);
-
-		if (xHigherPriorityTaskWoken) {
-			portYIELD_FROM_ISR();
-		}
-	}
-}
-
-// Initialize the display
+//Initialize the display
 static void ili_init()
 {
-	int cmd = 0;
-	// Initialize non-SPI GPIOs
-	gpio_set_direction(LCD_PIN_NUM_DC, GPIO_MODE_OUTPUT);
+    int cmd = 0;
 
-	// Send all the commands
-	// TODO: Use polling for faster init?
-	while (ili_init_cmds[cmd].databytes != 0xff) {
-		ili_cmd(spi, ili_init_cmds[cmd].cmd);
-		ili_data(spi, ili_init_cmds[cmd].data, ili_init_cmds[cmd].databytes & 0x7F);
-		if (ili_init_cmds[cmd].databytes & 0x80) {
-			vTaskDelay(100 / portTICK_RATE_MS);
-		}
-		cmd++;
-	}
+    //Initialize non-SPI GPIOs
+    gpio_set_direction(LCD_PIN_NUM_DC, GPIO_MODE_OUTPUT);
+
+    //Send all the commands
+    while (ili_init_cmds[cmd].databytes != 0xff)
+    {
+        ili_cmd(ili_init_cmds[cmd].cmd);
+
+        int len = ili_init_cmds[cmd].databytes & 0x7f;
+        if (len) ili_data(ili_init_cmds[cmd].data, len);
+
+        if (ili_init_cmds[cmd].databytes & 0x80)
+        {
+            vTaskDelay(100 / portTICK_RATE_MS);
+        }
+
+        cmd++;
+    }
 }
 
-static void send_reset_drawing(int x, int y, int width, int height)
+static inline void send_reset_column(int left, int right, int len)
 {
-	trans[0].tx_data[0] = 0x2A;		       // Column Address Set
-	trans[1].tx_data[0] = x >> 8;		       // Start Col High
-	trans[1].tx_data[1] = x & 0xff;		       // Start Col Low
-	trans[1].tx_data[2] = (x + width - 1) >> 8;    // End Col High
-	trans[1].tx_data[3] = (x + width - 1) & 0xff;  // End Col Low
-	trans[2].tx_data[0] = 0x2B;		       // Page address set
-	trans[3].tx_data[0] = y >> 8;		       // Start page high
-	trans[3].tx_data[1] = y & 0xff;		       // Start page low
-	trans[3].tx_data[2] = (y + height - 1) >> 8;   // End page high
-	trans[3].tx_data[3] = (y + height - 1) & 0xff; // End page low
-	trans[4].tx_data[0] = 0x2C;		       // Memory write
-
-	// Queue all transactions.
-	for (int x = 0; x < 5; x++) {
-		esp_err_t ret = spi_device_queue_trans(spi, &trans[x], 1000 / portTICK_RATE_MS);
-		assert(ret == ESP_OK);
-	}
+    ili_cmd(0x2A);
+    const uint8_t data[] = { (left) >> 8, (left) & 0xff, right >> 8, right & 0xff };
+    ili_data(data, len);
 }
 
-static void send_continue_wait()
+static inline void send_reset_page(int top, int bottom, int len)
 {
-	if (waitForTransactions) {
-		ulTaskNotifyTake(pdTRUE, 1000 / portTICK_RATE_MS);
-
-		// Drain SPI queue
-		esp_err_t err = ESP_OK;
-		while (err == ESP_OK) {
-			spi_transaction_t *trans_desc;
-			err = spi_device_get_trans_result(spi, &trans_desc, 0);
-		}
-
-		waitForTransactions = false;
-	}
+    ili_cmd(0x2B);
+    const uint8_t data[] = { top >> 8, top & 0xff, bottom >> 8, bottom & 0xff };
+    ili_data(data, len);
 }
 
-static void send_continue_line(uint16_t *line, int width, int height)
+void send_reset_drawing(int left, int top, int width, int height)
 {
-	send_continue_wait();
+    static int last_left = -1;
+    static int last_right = -1;
+    static int last_top = -1;
+    static int last_bottom = -1;
 
-	trans[6].tx_data[0] = 0x3C; // memory write continue
-	trans[6].length = 8;	// Data length, in bits
-	trans[6].flags = SPI_TRANS_USE_TXDATA;
+    int right = left + width - 1;
+    if (height == 1) {
+        if (last_right > right) right = last_right;
+        else right = DISPLAY_WIDTH - 1;
+    }
+    if (left != last_left || right != last_right) {
+        send_reset_column(left, right, (right != last_right) ?  4 : 2);
+        last_left = left;
+        last_right = right;
+    }
 
-	trans[7].tx_buffer = line;	     // finally send the line data
-	trans[7].length = width * height * 16; // Data length, in bits
-	trans[7].rxlength = 0;
-	trans[7].flags = 0;
+    int bottom = (top + height - 1);
+    if (top != last_top || bottom != last_bottom) {
+        send_reset_page(top, bottom, (bottom != last_bottom) ? 4 : 2);
+        last_top = top;
+        last_bottom = bottom;
+    }
 
-	// Queue transactions.
-	for (int x = 6; x < 8; x++) {
-		esp_err_t ret = spi_device_queue_trans(spi, &trans[x], 1000 / portTICK_RATE_MS);
-		assert(ret == ESP_OK);
-	}
-
-	waitForTransactions = true;
+    ili_cmd(0x2C);           //memory write
+    if (height > 1) {
+        ili_cmd(0x3C);           //memory write continue
+    }
 }
 
-static uint16_t *get_pbuf(void)
+void send_continue_line(uint16_t *line, int width, int lineCount)
 {
-	static uint16_t *current = NULL;
-	if (current == NULL) {
-		current = pbuf[0];
-	}
-	uint16_t *result = current;
+    spi_transaction_t* t = spi_get_transaction();
+    t->length = width * 2 * lineCount * 8;
+    t->tx_buffer = line;
+    t->user = (void*)0x81;
+    t->flags = 0;
 
-	if (current == pbuf[0]) {
-		current = pbuf[1];
-	} else {
-		current = pbuf[0];
-	}
-	return result;
+    spi_put_transaction(t);
 }
 
-void display_init(void)
+//
+//   DISPLAY INIT
+//
+void display_init()
 {
-	ESP_LOGI("display", "spi init...");
+    // Init
+    spi_initialize();
 
-	pbuf[0] = heap_caps_malloc(320 * PARALLEL_LINES * sizeof(uint16_t), MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-	if (!pbuf[0])
-		abort();
+    // Line buffers
+    const size_t lineSize = DISPLAY_WIDTH * LINE_COUNT * sizeof(uint16_t);
+    for (int x = 0; x < LINE_BUFFERS; x++)
+    {
+        line[x] = heap_caps_malloc(lineSize, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+        if (!line[x]) abort();
 
-	pbuf[1] = heap_caps_malloc(320 * PARALLEL_LINES * sizeof(uint16_t), MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-	if (!pbuf[1])
-		abort();
+        printf("%s: line_buffer_put(%p)\n", __func__, line[x]);
+        line_buffer_put(line[x]);
+    }
 
-	// Initialize transactions
-	for (int x = 0; x < 8; x++) {
-		memset(&trans[x], 0, sizeof(spi_transaction_t));
-		if ((x & 1) == 0) {
-			// Even transfers are commands
-			trans[x].length = 8;
-			trans[x].user = (void *)0;
-		} else {
-			// Odd transfers are data
-			trans[x].length = 8 * 4;
-			trans[x].user = (void *)1;
-		}
-		trans[x].flags = SPI_TRANS_USE_TXDATA;
-	}
+    // Initialize transactions
+    for (int x = 0; x < SPI_TRANSACTION_COUNT; x++)
+    {
+        void* param = &trans[x];
+        xQueueSend(spi_queue, &param, portMAX_DELAY);
+    }
 
-	// Initialize SPI
-	esp_err_t ret;
-	spi_bus_config_t buscfg;
+    // Initialize SPI
+    esp_err_t ret;
+    //spi_device_handle_t spi;
+    spi_bus_config_t buscfg;
+		memset(&buscfg, 0, sizeof(buscfg));
 
-	memset(&buscfg, 0, sizeof(buscfg));
+    buscfg.miso_io_num = -1;
+    buscfg.mosi_io_num = SPI_PIN_NUM_MOSI;
+    buscfg.sclk_io_num = SPI_PIN_NUM_CLK;
+    buscfg.quadwp_io_num=-1;
+    buscfg.quadhd_io_num=-1;
+    buscfg.flags = SPICOMMON_BUSFLAG_NATIVE_PINS;
 
-	buscfg.miso_io_num = SPI_PIN_NUM_MISO;
-	buscfg.mosi_io_num = SPI_PIN_NUM_MOSI;
-	buscfg.sclk_io_num = SPI_PIN_NUM_CLK;
-	buscfg.quadwp_io_num = -1;
-	buscfg.quadhd_io_num = -1;
+    spi_device_interface_config_t devcfg;
+		memset(&devcfg, 0, sizeof(devcfg));
 
-	spi_device_interface_config_t devcfg;
+    devcfg.clock_speed_hz = LCD_SPI_CLOCK_RATE;
+    devcfg.mode = 0;                                //SPI mode 0
+    devcfg.spics_io_num = LCD_PIN_NUM_CS;               //CS pin
+    devcfg.queue_size = 7;                          //We want to be able to queue 7 transactions at a time
+    devcfg.pre_cb = ili_spi_pre_transfer_callback;  //Specify pre-transfer callback to handle D/C line
+    //devcfg.flags = SPI_DEVICE_NO_DUMMY; //SPI_DEVICE_HALFDUPLEX;
 
-	memset(&devcfg, 0, sizeof(devcfg));
+    //Initialize the SPI bus
+    ret=spi_bus_initialize(VSPI_HOST, &buscfg, 1);
+    assert(ret==ESP_OK);
 
-	devcfg.clock_speed_hz = LCD_SPI_CLOCK_RATE;
-	devcfg.mode = 0;			       // SPI mode 0
-	devcfg.spics_io_num = LCD_PIN_NUM_CS;	  // CS pin
-	devcfg.queue_size = 7;			       // We want to be able to queue 7 transactions at a time
-	devcfg.pre_cb = ili_spi_pre_transfer_callback; // Specify pre-transfer callback to handle D/C line
-	devcfg.post_cb = ili_spi_post_transfer_callback;
-	devcfg.flags = SPI_DEVICE_NO_DUMMY;
+    //Attach the LCD to the SPI bus
+    ret=spi_bus_add_device(VSPI_HOST, &devcfg, &spi);
+    assert(ret==ESP_OK);
 
-	ret = spi_bus_initialize(HSPI_HOST, &buscfg, 1);
-	assert(ret == ESP_OK);
-
-	ret = spi_bus_add_device(HSPI_HOST, &devcfg, &spi);
-	assert(ret == ESP_OK);
-
-	odroid_spi_mutex = xSemaphoreCreateMutex();
-
-	ESP_LOGI("display", "initializing ili...");
-	ili_init();
-	ESP_LOGI("display", "ili init done");
-	videoQueue = xQueueCreate(1, sizeof(uint16_t*));
-	xTaskCreatePinnedToCore(&videoTask, "videoTask", 2048, NULL,  2 , NULL, 0);
-	ESP_LOGI("display", "video task started");
-}
-
-void display_drain(void)
-{
-	xSemaphoreTake(odroid_spi_mutex, portMAX_DELAY);
-	// Drain SPI queue
-	xTaskToNotify = 0;
-
-	esp_err_t err = ESP_OK;
-
-	while (err == ESP_OK) {
-		spi_transaction_t *trans_desc;
-		err = spi_device_get_trans_result(spi, &trans_desc, 0);
-	}
-	xSemaphoreGive(odroid_spi_mutex);
+    //Initialize the LCD
+	  printf("LCD: calling ili_init.\n");
+    ili_init();
+    videoQueue = xQueueCreate(1, sizeof(uint16_t*));
+    xTaskCreatePinnedToCore(&videoTask, "videoTask", 2048, NULL,  2 , NULL, 0);
+    printf("LCD Initialized (%d Hz).\n", LCD_SPI_CLOCK_RATE);
 }
 
 void display_poweroff()
 {
-	display_drain();
+    // // Drain SPI queue
+     esp_err_t err = ESP_OK;
 
-	xSemaphoreTake(odroid_spi_mutex, portMAX_DELAY);
-	// Disable LCD panel
-	int cmd = 0;
-	while (ili_sleep_cmds[cmd].databytes != 0xff) {
-		ili_cmd(spi, ili_sleep_cmds[cmd].cmd);
-		ili_data(spi, ili_sleep_cmds[cmd].data, ili_sleep_cmds[cmd].databytes & 0x7f);
-		if (ili_sleep_cmds[cmd].databytes & 0x80) {
-			vTaskDelay(100 / portTICK_RATE_MS);
-		}
-		cmd++;
-	}
-	xSemaphoreGive(odroid_spi_mutex);
-}
+    // Disable LCD panel
+    xSemaphoreTake(display_mutex, portMAX_DELAY);
+    int cmd = 0;
+    while (ili_sleep_cmds[cmd].databytes != 0xff)
+    {
+        //printf("ili9341_poweroff: cmd=%d, ili_sleep_cmds[cmd].cmd=0x%x, ili_sleep_cmds[cmd].databytes=0x%x\n",
+        //    cmd, ili_sleep_cmds[cmd].cmd, ili_sleep_cmds[cmd].databytes);
 
-void display_clear(uint16_t color)
-{
-	xSemaphoreTake(odroid_spi_mutex, portMAX_DELAY);
-	xTaskToNotify = xTaskGetCurrentTaskHandle();
+        ili_cmd(ili_sleep_cmds[cmd].cmd);
+        ili_data(ili_sleep_cmds[cmd].data, ili_sleep_cmds[cmd].databytes & 0x7f);
+        if (ili_sleep_cmds[cmd].databytes & 0x80)
+        {
+            vTaskDelay(100 / portTICK_RATE_MS);
+        }
+        cmd++;
+    }
+    xSemaphoreGive(display_mutex);
 
-	send_reset_drawing(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
-
-	uint16_t *pbuf = get_pbuf();
-
-	// clear the buffer
-	for (int i = 0; i < DISPLAY_WIDTH * PARALLEL_LINES; i++) {
-		pbuf[i] = (color << 8) | (color >> 8);
-	}
-
-	// clear the screen
-	for (short dy = 0; dy < DISPLAY_HEIGHT; dy += PARALLEL_LINES) {
-		send_continue_line(pbuf, DISPLAY_WIDTH, PARALLEL_LINES);
-	}
-
-	waitForTransactions = true;
-	send_continue_wait();
-	xSemaphoreGive(odroid_spi_mutex);
-}
-
-void display_update(void)
-{
-  xQueueSend(videoQueue, (void*)&VideoTaskCommand, portMAX_DELAY);
-  if (SystemHalt==1)
-    vTaskDelay(100);
 }
 
 void videoTask(void* argP)
@@ -414,102 +458,251 @@ void videoTask(void* argP)
 
 	uint16_t* param;
 	uint8_t ybase = 0;
+	int32_t timeTick;
+  int32_t deviceId;
 
 	while(1)
 	{
 		xQueuePeek(videoQueue, &param, portMAX_DELAY);
+		timeTick = TimGetTicks();
 		VideoTaskCommand = 0;
-		xSemaphoreTake(odroid_spi_mutex, portMAX_DELAY);
-		xTaskToNotify = xTaskGetCurrentTaskHandle();
 
-		if (1)
-		{
-			send_reset_drawing(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    display_lock();
 
-			for (short dy = 0; dy < DISPLAY_HEIGHT; dy += PARALLEL_LINES) {
-				uint16_t *pbuf = get_pbuf();
+    // clear the screen
+    send_reset_drawing(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 
-				if (SystemHalt == 1)
-				{
-					// blit full screen menus
-					//if (dy < ON_SCR_HEIGHT)
-						blit_ind_565(OffScreenBuffer->data[0] + OffScreenBuffer->width * dy, pbuf, OffScreenBuffer->width, PARALLEL_LINES);
-					//else
-					//	blit_ind_565(OffScreenBuffer->data[1] + OffScreenBuffer->width * (dy - ON_SCR_HEIGHT), pbuf, OffScreenBuffer->width, PARALLEL_LINES);
-				}
-				else
-				{
-					// Keyboard-blit
-					if ((NewRockerAttach == RockerAsVirtualKeyboard) && (dy >= (DISPLAY_HEIGHT - DISPLAY_KEYB_HEIGHT)))
-					{
-					ybase = GetCurrentKeyBaseCoordY();
-					blit_keyboard_565(KeyBoardOffScreenBuffer->data[0] + KeyBoardOffScreenBuffer->width * (ybase + dy - (DISPLAY_HEIGHT - DISPLAY_KEYB_HEIGHT)),
-						pbuf,
-						KeyBoardOffScreenBuffer->width, PARALLEL_LINES);
-					}
-					else
-					{
-						// EMU Blit
-						blit_ind_565(OffScreenBuffer->data[0] + OffScreenBuffer->width * dy , pbuf, OffScreenBuffer->width, PARALLEL_LINES);
-					}
-				}
+    for (short dy = 0; dy < DISPLAY_HEIGHT; dy += LINE_COUNT)
+    {
+        uint16_t* line_buffer = line_buffer_get();
 
-				send_continue_line(pbuf, DISPLAY_WIDTH, PARALLEL_LINES);
-			}
+        if (SystemHalt == 1)
+        {
+          // blit full screen menus
+            blit_ind_565(OffScreenBuffer->data[0] + OffScreenBuffer->width * dy, line_buffer, OffScreenBuffer->width, LINE_COUNT);
+        }
+        else
+        {
+          // Keyboard-blit
+          if ((NewRockerAttach == RockerAsVirtualKeyboard) && (dy >= (DISPLAY_HEIGHT - DISPLAY_KEYB_HEIGHT)))
+          {
+          ybase = GetCurrentKeyBaseCoordY();
+          blit_keyboard_565(KeyBoardOffScreenBuffer->data[0] + KeyBoardOffScreenBuffer->width * (ybase + dy - (DISPLAY_HEIGHT - DISPLAY_KEYB_HEIGHT)),
+            line_buffer,
+            KeyBoardOffScreenBuffer->width, LINE_COUNT);
+          }
+          else
+          {
+            // EMU Blit
+            blit_ind_565(OffScreenBuffer->data[0] + OffScreenBuffer->width * dy , line_buffer, OffScreenBuffer->width, LINE_COUNT);
+          }
+        }
+        send_continue_line(line_buffer, DISPLAY_WIDTH, LINE_COUNT);
+    }
 
-			waitForTransactions = true;
-			send_continue_wait();
-		}
-		xSemaphoreGive(odroid_spi_mutex);
-		xQueueReceive(videoQueue, &param, portMAX_DELAY);
-	}
+    display_unlock();
 
-	vTaskDelete(NULL);
-	while (1) {}
+    xQueueReceive(videoQueue, &param, portMAX_DELAY);
+    timeTick = TimGetTicks() - timeTick;
+    timeDelta += timeTick;
+  }
 }
 
-void display_update_rect(rect_t r)
+
+//
+//  Core drawing routine
+//
+void display_update(void)
 {
-	assert(r.x >= 0);
-	assert(r.y >= 0);
-	assert(r.width > 0);
-	assert(r.height > 0);
-	assert(r.x + r.width <= DISPLAY_WIDTH);
-	assert(r.y + r.height <= DISPLAY_HEIGHT);
-
-	xSemaphoreTake(odroid_spi_mutex, portMAX_DELAY);
-
-	xTaskToNotify = xTaskGetCurrentTaskHandle();
-	send_reset_drawing(r.x, r.y, r.width, r.height);
-
-	if (r.width == DISPLAY_WIDTH) {
-		for (short dy = 0; dy < r.height; dy += PARALLEL_LINES) {
-			uint16_t *pbuf = get_pbuf();
-			short numLines = r.height - dy;
-			numLines = numLines < PARALLEL_LINES ? numLines : PARALLEL_LINES;
-			memcpy(pbuf, ((uint16_t *)OffScreenBuffer->data[0]) + DISPLAY_WIDTH * (r.y + dy) + r.x, r.width * numLines * sizeof(uint16_t));
-			send_continue_line(pbuf, r.width, numLines);
-		}
-	} else {
-		for (short dy = 0; dy < r.height; dy += PARALLEL_LINES) {
-			uint16_t *pbuf = get_pbuf();
-			short numLines = r.height - dy;
-			numLines = numLines < PARALLEL_LINES ? numLines : PARALLEL_LINES;
-			for (short line = 0; line < numLines; line++) {
-				memcpy(pbuf + r.width * line, ((uint16_t *)OffScreenBuffer->data[0]) + DISPLAY_WIDTH * (r.y + dy + line) + r.x,
-				       r.width * sizeof(uint16_t));
-			}
-			send_continue_line(pbuf, r.width, numLines);
-		}
-	}
-
-	waitForTransactions = true;
-	send_continue_wait();
-	xSemaphoreGive(odroid_spi_mutex);
+  xQueueSend(videoQueue, (void*)&VideoTaskCommand, portMAX_DELAY);
+  if (SystemHalt==1)
+    vTaskDelay(100);
 }
 
-void display_screenshot(const char *path)
+
+void write_frame_rectangle(short left, short top, short width, short height, uint16_t* buffer)
 {
-	// TODO: Implement with stb_img_write or something
-	(void)path;
+    short x, y;
+
+    if (left < 0 || top < 0) abort();
+    if (width < 1 || height < 1) abort();
+
+    display_lock();
+    //xTaskToNotify = xTaskGetCurrentTaskHandle();
+    send_reset_drawing(left, top, width, height);
+
+    if (buffer == NULL)
+    {
+        // clear the buffer
+        for (int i = 0; i < LINE_BUFFERS; ++i)
+        {
+            memset(line[i], 0, DISPLAY_WIDTH * sizeof(uint16_t) * LINE_COUNT);
+        }
+
+        // clear the screen
+        send_reset_drawing(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+
+        for (y = 0; y < DISPLAY_HEIGHT; y += LINE_COUNT)
+        {
+            uint16_t* line_buffer = line_buffer_get();
+            send_continue_line(line_buffer, DISPLAY_WIDTH, LINE_COUNT);
+        }
+    }
+    else
+    {
+      for (y = 0; y < height; y++)
+        {
+            uint16_t* line_buffer = line_buffer_get();
+            memcpy(line_buffer, buffer + y * width, width * sizeof(uint16_t));
+            send_continue_line(line_buffer, width, 1);
+        }
+    }
+
+    display_unlock();
+}
+
+void display_clear(uint16_t color)
+{
+    display_lock();
+    //xTaskToNotify = xTaskGetCurrentTaskHandle();
+
+    send_reset_drawing(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+
+
+    // clear the buffer
+    for (int i = 0; i < LINE_BUFFERS; ++i)
+    {
+        for (int j = 0; j < DISPLAY_WIDTH * LINE_COUNT; ++j)
+        {
+            line[i][j] = color;
+        }
+    }
+
+    // clear the screen
+    send_reset_drawing(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+
+    for (int y = 0; y < DISPLAY_HEIGHT; y += LINE_COUNT)
+    {
+        uint16_t* line_buffer = line_buffer_get();
+        send_continue_line(line_buffer, DISPLAY_WIDTH, LINE_COUNT);
+    }
+
+    display_unlock();
+}
+
+void display_write_frame_rectangleLE(short left, short top, short width, short height, uint16_t* buffer)
+{
+    short x, y;
+
+    if (left < 0 || top < 0) abort();
+    if (width < 1 || height < 1) abort();
+
+    //xTaskToNotify = xTaskGetCurrentTaskHandle();
+
+    send_reset_drawing(left, top, width, height);
+
+    if (buffer == NULL)
+    {
+        // clear the buffer
+        for (int i = 0; i < LINE_BUFFERS; ++i)
+        {
+            memset(line[i], 0, DISPLAY_WIDTH * sizeof(uint16_t) * LINE_COUNT);
+        }
+
+        // clear the screen
+        send_reset_drawing(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+
+        for (y = 0; y < DISPLAY_HEIGHT; y += LINE_COUNT)
+        {
+            uint16_t* line_buffer = line_buffer_get();
+            send_continue_line(line_buffer, DISPLAY_WIDTH, LINE_COUNT);
+        }
+    }
+    else
+    {
+        for (y = 0; y < height; y++)
+        {
+            uint16_t* line_buffer = line_buffer_get();
+
+            for (int i = 0; i < width; ++i)
+            {
+                uint16_t pixel = buffer[y * width + i];
+                line_buffer[i] = pixel << 8 | pixel >> 8;
+            }
+
+            send_continue_line(line_buffer, width, 1);
+        }
+    }
+}
+
+void display_tasktonotify_set(int value)
+{
+    //xTaskToNotify = value;
+}
+
+void display_drain_spi()
+{
+    spi_transaction_t *t[SPI_TRANSACTION_COUNT];
+    for (int i = 0; i < SPI_TRANSACTION_COUNT; ++i) {
+        xQueueReceive(spi_queue, &t[i], portMAX_DELAY);
+    }
+    for (int i = 0; i < SPI_TRANSACTION_COUNT; ++i) {
+        if (xQueueSend(spi_queue, &t[i], portMAX_DELAY) != pdPASS)
+        {
+            abort();
+        }
+    }
+}
+
+/*
+void display_show_sderr(int errNum)
+{
+    switch(errNum)
+    {
+        case ODROID_SD_ERR_BADFILE:
+            display_write_frame_rectangleLE(0, 0, image_sd_card_unknown.width, image_sd_card_unknown.height, image_sd_card_unknown.pixel_data); // Bad File image
+            break;
+
+        case ODROID_SD_ERR_NOCARD:
+            display_write_frame_rectangleLE(0, 0, image_sd_card_alert.width, image_sd_card_alert.height, image_sd_card_alert.pixel_data); // No Card image
+            break;
+
+        default:
+            abort();
+    }
+
+    // Drain SPI queue
+    display_drain_spi();
+}
+*/
+
+void inline display_lock()
+{
+    if (!display_mutex)
+    {
+        display_mutex = xSemaphoreCreateMutex();
+        if (!display_mutex) abort();
+    }
+
+    if (xSemaphoreTake(display_mutex, 1000 / portTICK_RATE_MS) != pdTRUE)
+    {
+        abort();
+    }
+}
+
+void inline display_unlock()
+{
+    if (!display_mutex) abort();
+
+    display_drain_spi();
+    xSemaphoreGive(display_mutex);
+}
+
+void inline display_stop()
+{
+		xSemaphoreTake(display_mutex,portMAX_DELAY);
+}
+void inline display_resume()
+{
+		xSemaphoreGive(display_mutex);
 }

@@ -64,6 +64,7 @@ typedef enum
 	TTGUI_OSD_BLOCKKEYS = 8,
 	TTGUI_OSD_TIMEROSD = 16,
 	TTGUI_OSD_TERMINATE = 32,
+	TTGUI_OSD_FCALL = 64,
 } ttgui_osd_state;
 
 // fonts
@@ -98,9 +99,12 @@ typedef enum
 {
 	TTGUI_OT_PREFS = 0,
 	TTGUI_OT_GAME,
-	TTGUI_OT_CPC,
 	TTGUI_OT_BT,
 	TTGUI_OT_AUDIO,
+	TTGUI_OT_SAVESNAPSHOT,
+	TTGUI_OT_LOADSNAPSHOT,
+	// must be last!!
+	NUM_TOTAL_OPTIONS,
 } ttgui_ot_type;
 
 typedef struct
@@ -132,6 +136,7 @@ typedef struct
 		//uint32_t next_tickms;
 		ttgui_clip_obj* clip_obj;
 		void (*on_update_caller)(void);
+		void (*func_caller)(void);
 } ttgui_osd_obj;
 
 // option Object

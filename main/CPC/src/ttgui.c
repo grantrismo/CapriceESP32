@@ -19,7 +19,6 @@
 
 #define NUM_TOTAL_PANELS 					(4) // for general allocation
 #define NUM_MENU_PANELS						(3) // part of the context setting menu
-#define NUM_TOTAL_OPTIONS         (4) // number of total options/preferences to choose from
 
 #define PANEL_GAME_ID 						(0)
 #define PANEL_AUTOSTART_ID 				(1)
@@ -32,8 +31,8 @@
 const ttgui_pn_obj pn_obj_setup[NUM_TOTAL_PANELS] = {
 	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Select Game"        , 0  ,0  ,159,119,12,1,19,0}, // SDCARD selector pannel
 	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Select Autostart"   , 0  ,161,159,119,12,1,19,0}, // CAT selector pannel
-	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Preferences (V0.79)", 121,0  ,320,119,12,2,19,0}, // SETTINGS selector panel
-	{0,3,3,3,3,NULL,0,NULL,NULL,NULL,"Modal              ", 60 ,80 ,159,119,12,1,19,0}, // MODAL selector panel
+	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Preferences (V0.84)", 121,0  ,320,119,12,2,19,0}, // SETTINGS selector panel
+	{0,3,3,3,3,NULL,0,NULL,NULL,NULL,"Modal              ", 60 ,60 ,199,119,12,1,24,0}, // MODAL selector panel
 };
 
 // caller prototypes
@@ -44,6 +43,10 @@ static void ttgui_osdobj_update_bt_candidates();
 static void ttgui_txobj_connect_to_peer();
 static void ttgui_otobj_change_audio();
 static void ttgui_check_peer_status();
+static void ttgui_otobj_save_snapshot();
+static void ttgui_otobj_exe_save_snapshot();
+static void ttgui_otobj_restore_snapshot();
+static void ttgui_otobj_action_snapshot();
 
 // Option Test, Possible Selections, inital selection index, max number of selections
 const ttgui_ot_obj ot_obj_setup[NUM_TOTAL_OPTIONS] = {
@@ -51,6 +54,8 @@ const ttgui_ot_obj ot_obj_setup[NUM_TOTAL_OPTIONS] = {
 	{TTGUI_OT_PREFS, 0, ttgui_otobj_change_sound, "Sound: ", {2, (char*[]){"on","off"}}},
 	{TTGUI_OT_BT, 0, ttgui_otobj_change_bt, "BT Audio: ", {3, (char*[]){"unpaired","pairing","paired"}}},
 	{TTGUI_OT_AUDIO, 0, ttgui_otobj_change_audio, "Driver: ", {2, (char*[]){"Speaker","Bluetooth"}}},
+	{TTGUI_OT_SAVESNAPSHOT, 0, ttgui_otobj_exe_save_snapshot, "Session: ", {1, (char*[]){"Save"}}},
+	{TTGUI_OT_LOADSNAPSHOT, 0, ttgui_otobj_restore_snapshot, "Session: ", {1, (char*[]){"Restore"}}},
 };
 
 // globals
@@ -80,6 +85,8 @@ static void ttgui_fillPanelRect();
 static void ttgui_clearPanelArea();
 static void ttgui_clearBg();
 static void ttgui_free();
+static void ttgui_openModalWindow(char* title_text);
+static void ttgui_closeModalWindow();
 
 static ttgui_err ttgui_malloc(uint32_t size, void **new_ptr);
 
@@ -99,12 +106,14 @@ static void ttgui_osd_restore();
 static void ttgui_osd_timer(uint16_t start, uint16_t tickms, const void* func_call, bool blockkeys);
 static void ttgui_osd_timer_next();
 static void ttgui_osd_master_text(const char* String, ttgui_font_style Style);
+static void ttgui_osd_fkt_text(const char* String,const void* func_call);
 static void ttgui_osd_center_text(const char* String, uint16_t tickms, const void* func_call);
 static void ttgui_osd_calc_size(const char* String, ttgui_font_style Style, uint16_t* width, uint16_t* height);
 
 // on_event_callers
-static void ttgui_open_game_dir();
-static void ttgui_update_game_dir();
+static void ttgui_open_file_dir();
+static void ttgui_update_file_dir();
+static void ttgui_free_file_dir();
 
 static void ttgui_txobj_lose_focus();
 static void ttgui_txobj_get_focus();
@@ -120,6 +129,7 @@ static uint16_t ttgui_otobj_update_defaults(ttgui_ot_type type, uint16_t current
 // helpers
 static int ttgui_files_get(const char* path, const char* extension, char*** filesOut);
 static void ttgui_files_free(char** files, int count);
+static void ttgui_files_list(char* file_path, char* file_ext, const void* func_call);
 
 // Basic GFX functions
 static void ttgui_panel_getparent();
@@ -236,13 +246,19 @@ ttgui_err ttgui_osdRegister(const char* String, uint16_t tickms)
 		osd_obj.tickms = tickms;
 		strcpy(osd_obj.string_osd, String);
 		osd_obj.on_update_caller = NULL;
-		timer_event_start(osd_obj.tickms);
+
+		if (osd_obj.tickms)
+			timer_event_start(osd_obj.tickms);
+
 		return (TTGUI_ERRNONE);
 	}
 	else if (osd_obj.state == TTGUI_OSD_REGISTERED)
 	{
 		strcpy(osd_obj.string_osd, String);
-		timer_event_reset(osd_obj.tickms);
+
+		if (osd_obj.tickms)
+			timer_event_reset(osd_obj.tickms);
+
 		return (TTGUI_ERRNONE);
 	}
 
@@ -305,7 +321,10 @@ void ttgui_osd_center_text(const char* String, uint16_t tickms, const void* func
 		osd_obj.tickms = tickms;
 		osd_obj.string_text = String;
 		osd_obj.on_update_caller = func_call;
-		timer_event_start(osd_obj.tickms);
+
+		if (osd_obj.tickms)
+			timer_event_start(osd_obj.tickms);
+
 		ttgui_osd_master_text(osd_obj.string_text, osd_obj.style);
 	}
 }
@@ -350,7 +369,23 @@ void ttgui_osd_restore()
 
 	if (osd_obj.on_update_caller != NULL)
 		osd_obj.on_update_caller();
+}
 
+void ttgui_osd_fkt_text(const char* String,const void* func_call)
+/**********************************************
+*
+*	ttgui_osd_fkt_text
+*
+**********************************************/
+{
+	if (osd_obj.state == TTGUI_OSD_IDLE)
+	{
+		osd_obj.state = TTGUI_OSD_FCALL;
+		osd_obj.func_caller = func_call;
+		strcpy(osd_obj.string_osd, String);
+		ttgui_osd_master_text(osd_obj.string_osd, osd_obj.style);
+		kick_osd_event();
+	}
 }
 
 void ttgui_osd_timer(uint16_t start, uint16_t tickms, const void* func_call, bool blockkeys)
@@ -528,8 +563,12 @@ void ttgui_clip_free(ttgui_clip_obj* clip_obj)
 	if (clip_obj != NULL)
 	{
 		if (clip_obj->chunk != NULL)
+#ifdef SIM
 			free(clip_obj->chunk);
-
+#else
+			heap_caps_free(clip_obj->chunk);
+#endif
+		clip_obj->chunk = NULL;
 		free(clip_obj);
 		clip_obj = NULL;
 	}
@@ -560,7 +599,11 @@ void ttgui_clip_destroy(ttgui_clip_obj* clip_obj)
 {
 	if (clip_obj->chunk != NULL)
 	{
+#ifdef SIM
 		free(clip_obj->chunk);
+#else
+		heap_caps_free(clip_obj->chunk);
+#endif
 		ttgui_clip_reset(clip_obj);
 	}
 }
@@ -705,8 +748,9 @@ ttgui_err ttgui_PanelConstructor(gbuf_t* frame_buffer, uint16_t frame_width, uin
 	memcpy(ot_obj, ot_obj_setup, sizeof(ttgui_ot_obj) * NUM_TOTAL_OPTIONS);
 
 	// fill the caller functions
-	pn_obj_base[PANEL_GAME_ID].on_access_caller = ttgui_open_game_dir; // setup the sdcard dir structure
-	pn_obj_base[PANEL_GAME_ID].on_update_caller = ttgui_update_game_dir; // setup the sdcard dir structure
+	pn_obj_base[PANEL_GAME_ID].on_access_caller = ttgui_open_file_dir; // setup the sdcard dir structure
+	pn_obj_base[PANEL_GAME_ID].on_update_caller = ttgui_update_file_dir; // setup the sdcard dir structure
+	pn_obj_base[PANEL_GAME_ID].on_leave_caller = ttgui_free_file_dir; // cleanup
 	pn_obj_base[PANEL_SETTINGS_ID].on_access_caller = ttgui_otobj_options_setup; // setup the option configuration
 
 	// reset the osd
@@ -728,6 +772,7 @@ void ttgui_setup()
 {
 	// clear the full background of the GUI
 	ttgui_clearBg();
+	hd_obj->onfocus_pn_obj_index = 0;
 
 	// setup the basic outline of all the panes on the display
 	// draw the panel(s) outline and title
@@ -781,6 +826,21 @@ ttgui_err ttgui_osdManager(event_t* event)
 			ttgui_osd_restore();
 			return(TTGUI_ERRNONE);
 	}
+	else if (osd_obj.state == TTGUI_OSD_FCALL)
+	{
+		// should normally block here
+		if (osd_obj.func_caller != NULL)
+		{
+			osd_obj.state = TTGUI_OSD_IDLE;
+			osd_obj.func_caller();
+		}
+		// do not destroy updated func_caller OSD handling
+		if (osd_obj.state == TTGUI_OSD_IDLE)
+		{
+			ttgui_osd_restore();
+		}
+			return (TTGUI_NEEDGUIUPDATE);
+	}
 	else
 		return(TTGUI_ERRNONE);
 }
@@ -812,13 +872,23 @@ ttgui_err ttgui_windowManager(event_t* event)
 
 		ttgui_pn_obj* tmp_pn_obj = &hd_obj->base_pn_obj[pn_obj->left_pn_obj_index];
 		// Do we have objects inside the panel object?
-		if (tmp_pn_obj->num_tx_objs)
+		if ((tmp_pn_obj->num_tx_objs) || (tmp_pn_obj->on_access_caller!=NULL))
 		{
-			tx_obj -> on_leave_caller();
+			if (tx_obj-> on_leave_caller != NULL)
+				tx_obj->on_leave_caller();
+
+			if (pn_obj->on_leave_caller != NULL)
+				pn_obj->on_leave_caller();
+
 			hd_obj -> onfocus_pn_obj_index = pn_obj->left_pn_obj_index;
 			pn_obj = tmp_pn_obj;
 			tx_obj = &pn_obj->tx_obj_base[pn_obj-> onfocus_tx_obj_index];
-			tx_obj -> on_access_caller();
+
+			if (pn_obj->on_access_caller != NULL)
+				pn_obj->on_access_caller();
+
+			if (tx_obj-> on_access_caller != NULL)
+				tx_obj -> on_access_caller();
 		}
 		return(TTGUI_NEEDGUIUPDATE);
 	}
@@ -829,13 +899,23 @@ ttgui_err ttgui_windowManager(event_t* event)
 		// Move to panel to the right_pn_obj_index
 		ttgui_pn_obj* tmp_pn_obj = &hd_obj->base_pn_obj[pn_obj->right_pn_obj_index];
 		// Do we have objects inside the panel object?
-		if (tmp_pn_obj->num_tx_objs)
+		if ((tmp_pn_obj->num_tx_objs) || (tmp_pn_obj->on_access_caller!=NULL))
 		{
-			tx_obj -> on_leave_caller();
+			if (tx_obj-> on_leave_caller != NULL)
+				tx_obj->on_leave_caller();
+
+			if (pn_obj->on_leave_caller != NULL)
+				pn_obj->on_leave_caller();
+
 			hd_obj -> onfocus_pn_obj_index = pn_obj->right_pn_obj_index;
 			pn_obj = tmp_pn_obj;
 			tx_obj = &pn_obj->tx_obj_base[pn_obj-> onfocus_tx_obj_index];
-			tx_obj -> on_access_caller();
+
+			if (pn_obj->on_access_caller != NULL)
+				pn_obj->on_access_caller();
+
+			if (tx_obj-> on_access_caller != NULL)
+				tx_obj -> on_access_caller();
 		}
 		return(TTGUI_NEEDGUIUPDATE);
 	}
@@ -846,13 +926,23 @@ ttgui_err ttgui_windowManager(event_t* event)
 		// Move to panel to the above_pn_obj_index
 		ttgui_pn_obj* tmp_pn_obj = &hd_obj->base_pn_obj[pn_obj->above_pn_obj_index];
 		// Do we have objects inside the panel object?
-		if (tmp_pn_obj->num_tx_objs)
+		if ((tmp_pn_obj->num_tx_objs) || (tmp_pn_obj->on_access_caller!=NULL))
 		{
-			tx_obj -> on_leave_caller();
+			if (tx_obj-> on_leave_caller != NULL)
+				tx_obj->on_leave_caller();
+
+			if (pn_obj->on_leave_caller != NULL)
+				pn_obj->on_leave_caller();
+
 			hd_obj -> onfocus_pn_obj_index = pn_obj->above_pn_obj_index;
 			pn_obj = tmp_pn_obj;
 			tx_obj = &pn_obj->tx_obj_base[pn_obj-> onfocus_tx_obj_index];
-			tx_obj -> on_access_caller();
+
+			if (pn_obj->on_access_caller != NULL)
+				pn_obj->on_access_caller();
+
+			if (tx_obj-> on_access_caller != NULL)
+				tx_obj -> on_access_caller();
 		}
 		return(TTGUI_NEEDGUIUPDATE);
 	}
@@ -863,13 +953,23 @@ ttgui_err ttgui_windowManager(event_t* event)
 		// Move to panel to the below_pn_obj_index
 		ttgui_pn_obj* tmp_pn_obj = &hd_obj->base_pn_obj[pn_obj->below_pn_obj_index];
 		// Do we have objects inside the panel object?
-		if (tmp_pn_obj->num_tx_objs)
+		if ((tmp_pn_obj->num_tx_objs) || (tmp_pn_obj->on_access_caller!=NULL))
 		{
-			tx_obj -> on_leave_caller();
+			if (tx_obj-> on_leave_caller != NULL)
+				tx_obj->on_leave_caller();
+
+			if (pn_obj->on_leave_caller != NULL)
+				pn_obj->on_leave_caller();
+
 			hd_obj -> onfocus_pn_obj_index = pn_obj->below_pn_obj_index;
 			pn_obj = tmp_pn_obj;
 			tx_obj = &pn_obj->tx_obj_base[pn_obj-> onfocus_tx_obj_index];
-			tx_obj -> on_access_caller();
+
+			if (pn_obj->on_access_caller != NULL)
+				pn_obj->on_access_caller();
+
+			if (tx_obj-> on_access_caller != NULL)
+				tx_obj -> on_access_caller();
 		}
 		return(TTGUI_NEEDGUIUPDATE);
 	}
@@ -987,6 +1087,39 @@ static void ttgui_panel_getparent()
 	}
 }
 
+static void ttgui_openModalWindow(char* title_text)
+/**********************************************
+*
+*	ttgui_openModalWindow
+*
+**********************************************/
+{
+	// move pointer to the autostart panel
+	ttgui_panel_setid(PANEL_MODAL_ID);
+	// setup new clipboard
+	panel_clip = ttgui_clip_create();
+	ttgui_clip_new(panel_clip, pn_obj->top, pn_obj->left, pn_obj->width, pn_obj->height);
+	ttgui_clip_copy(panel_clip);
+	// open the selector panel
+	strcpy(pn_obj->title, title_text);
+	ttgui_createPanel();
+}
+
+static void ttgui_closeModalWindow()
+/**********************************************
+*
+*	ttgui_closeModalWindow
+*
+**********************************************/
+{
+	ttgui_clip_paste(panel_clip);
+	ttgui_clip_destroy(panel_clip);
+	ttgui_clip_free(panel_clip);
+	pn_obj->on_update_caller = NULL;
+	pn_obj->on_access_caller = NULL;
+	pn_obj->on_leave_caller = NULL;
+	ttgui_panel_getparent();
+}
 
 static void ttgui_createPanel()
 /**********************************************
@@ -1441,51 +1574,40 @@ static ttgui_err ttgui_appendTxObj(const char* text, const void* func_call)
 
 ///                  CALLERS
 
-static void ttgui_open_game_dir()
+static void ttgui_open_file_dir()
 /***********************************************************************
  *
- *  ttgui_open_game_dir
+ *  ttgui_open_file_dir
  *
  ***********************************************************************/
  {
-	 const char ext_dsk[] = {".dsk"};
-	 int max_tx_count = (pn_obj->tx_layout_nc*pn_obj->tx_layout_nr);
-
-	 // clear background
-	 ttgui_createPanel();
-
-	 if (strcmp(curr_dir,next_dir)!=0)
+	 printf("**Panel ID: %d\n",hd_obj->onfocus_pn_obj_index);
+	 if (hd_obj->onfocus_pn_obj_index == PANEL_GAME_ID)
 	 {
-
-		 // construct full path
-		 strcat(next_dir, DEFAULT_DISK_PATH);
-
-		 // load relevant files to Buffer
-		 currentDirFileCount = ttgui_files_get(next_dir, ext_dsk, &currentDirFileList);
-		 strcpy(curr_dir, next_dir);
-		 printf("Total items loaded %d on path: %s\n",currentDirFileCount, next_dir);
-		 pn_obj->tx_page_n = 0;
-	 }
-
-	 // reset the nuber of objects
-	 pn_obj->num_tx_objs = 0;
-
-	 // move files
-	 for (int i=(pn_obj->tx_page_n*max_tx_count);i<currentDirFileCount;i++)
+	 	// show the file list of disk files
+	 	ttgui_files_list(DEFAULT_DISK_PATH, DISK_EXTENSION, ttgui_txobj_load_cat);
+ 	 }
+	 else
 	 {
-		 ttgui_appendTxObj(currentDirFileList[i], ttgui_txobj_load_cat);
-		 if (pn_obj->num_tx_objs >= max_tx_count)
-		  	break;
+		 // TODO: Better window scrolling support
+		ttgui_files_list(DEFAULT_CAPRICE_PATH, CONTEXT_EXTENSION, ttgui_otobj_action_snapshot);
 	 }
-
-	 // set current tx-object focus
-	 if (pn_obj->num_tx_objs)
-	 {
-		 pn_obj-> onfocus_tx_obj_index = 0;
-		 tx_obj = &pn_obj->tx_obj_base[pn_obj-> onfocus_tx_obj_index];
-	 }
-
  }
+
+
+static void ttgui_free_file_dir()
+/***********************************************************************
+ *
+ *  ttgui_free_file_dir
+ *
+ ***********************************************************************/
+{
+		pn_obj->num_tx_objs = 0;
+		ttgui_files_free(currentDirFileList,currentDirFileCount);
+		currentDirFileList = NULL;
+		currentDirFileCount = 0;
+		next_dir[0] = '\0';
+}
 
 
 static void ttgui_txobj_get_focus()
@@ -1519,10 +1641,10 @@ static void ttgui_txobj_lose_focus()
 		ttgui_fillRect(left, top, pn_obj->left+pn_obj->width-2, top + CPC_KEYBOARD_FONT_HEIGHT - 1, 0);
   }
 
-static void ttgui_update_game_dir()
+static void ttgui_update_file_dir()
 /***********************************************************************
 *
-* 	 ttgui_update_game_dir
+* 	 ttgui_update_file_dir
 *
 ***********************************************************************/
 {
@@ -1538,7 +1660,7 @@ static void ttgui_update_game_dir()
 	if (tx_obj->above == TTGUI_NIL)
 	{
 		pn_obj->tx_page_n--;
-		ttgui_open_game_dir();
+		ttgui_open_file_dir();
 		return;
 	}
 
@@ -1549,7 +1671,7 @@ static void ttgui_update_game_dir()
 	if (tx_obj->below == TTGUI_NIL)
 	{
 		pn_obj->tx_page_n++;
-		ttgui_open_game_dir();
+		ttgui_open_file_dir();
 	}
 
 }
@@ -1753,10 +1875,53 @@ void ttgui_files_free(char** files, int count)
     free(files);
 }
 
+void ttgui_files_list(char* file_path, char* file_ext, const void* func_call)
+/***********************************************************************
+*
+* 	 ttgui_files_list
+*
+***********************************************************************/
+{
+ int max_tx_count = (pn_obj->tx_layout_nc*pn_obj->tx_layout_nr);
+
+ // clear background
+ ttgui_createPanel();
+
+ if (strcmp(curr_dir,next_dir) != 0)
+ {
+	 // construct full path
+	 strcat(next_dir, file_path);
+
+	 // load relevant files to Buffer
+	 currentDirFileCount = ttgui_files_get(next_dir, file_ext, &currentDirFileList);
+	 strcpy(curr_dir, next_dir);
+	 printf("Total items loaded %d on path: %s\n",currentDirFileCount, next_dir);
+	 pn_obj->tx_page_n = 0;
+ }
+
+ // reset the nuber of objects
+ pn_obj->num_tx_objs = 0;
+
+ // move files
+ for (int i=(pn_obj->tx_page_n*max_tx_count);i<currentDirFileCount;i++)
+ {
+	 ttgui_appendTxObj(currentDirFileList[i], func_call);
+	 if (pn_obj->num_tx_objs >= max_tx_count)
+	  	break;
+ }
+
+ // set current tx-object focus
+ if (pn_obj->num_tx_objs)
+ {
+	 pn_obj-> onfocus_tx_obj_index = 0;
+	 tx_obj = &pn_obj->tx_obj_base[pn_obj-> onfocus_tx_obj_index];
+ }
+}
+
 void ttgui_txobj_load_cat()
 /***********************************************************************
 *
-* 	 ttgui_files_free
+* 	 ttgui_txobj_load_cat
 *
 ***********************************************************************/
 {
@@ -1880,6 +2045,7 @@ void ttgui_otobj_options_setup(void)
 
 	// move pointer to the autostart panelttgui_txobj_cpc_autostart
 	pn_obj = &hd_obj->base_pn_obj[PANEL_SETTINGS_ID];
+	pn_obj->num_tx_objs = 0;
 
 	for (int i=0;i<NUM_TOTAL_OPTIONS;i++)
 	{
@@ -2172,10 +2338,7 @@ void ttgui_txobj_connect_to_peer()
 	a2dp_service_start_discovery_connect((const char*)tx_obj->text);
 
 	// return to the option window, and set new status
-	ttgui_clip_paste(panel_clip);
-	ttgui_clip_destroy(panel_clip);
-	ttgui_clip_free(panel_clip);
-	ttgui_panel_getparent();
+	ttgui_closeModalWindow();
 
 	// update the option stat on connected
 	uint16_t tx_ot_id = tx_obj-> tx_obj_id;
@@ -2233,10 +2396,7 @@ void ttgui_osdobj_update_bt_candidates()
 	else if (osd_obj.state == TTGUI_OSD_IDLE)
 	{
 		// no device found, close the bt discovery window, and return to the object window
-		ttgui_clip_paste(panel_clip);
-		ttgui_clip_destroy(panel_clip);
-		ttgui_clip_free(panel_clip);
-		ttgui_panel_getparent();
+		ttgui_closeModalWindow();
 	}
 }
 
@@ -2248,7 +2408,7 @@ void ttgui_otobj_change_bt()
 *
 ***********************************************************************/
 {
-	const char* title = {"BT Discovery..."};
+	char* title = {"BT Discovery..."};
 
 	if (a2dp_is_connected())
 	{
@@ -2271,16 +2431,95 @@ void ttgui_otobj_change_bt()
 	}
 
 	// move pointer to the autostart panel
-	ttgui_panel_setid(PANEL_MODAL_ID);
-	// setup new clipboard
-	panel_clip = ttgui_clip_create();
-	ttgui_clip_new(panel_clip, pn_obj->top, pn_obj->left, pn_obj->width, pn_obj->height);
-	ttgui_clip_copy(panel_clip);
-	// open the selector panel
-	strcpy(pn_obj->title, title);
-	ttgui_createPanel();
+	ttgui_openModalWindow(title);
+
 	// start bluetooth discovery
 	ttgui_osd_timer(10, 1000,ttgui_osdobj_update_bt_candidates, true);
 	a2dp_service_start_discovery(8);
 
+}
+
+
+void ttgui_otobj_exe_save_snapshot()
+/***********************************************************************
+*
+* 	 ttgui_otobj_exe_save_snapshot
+*
+***********************************************************************/
+{
+	ttgui_osd_fkt_text("Waiting...", ttgui_otobj_save_snapshot);
+}
+
+void ttgui_otobj_save_snapshot()
+{
+/***********************************************************************
+*
+* 	 ttgui_otobj_save_snapshot
+*
+***********************************************************************/
+	Err errSave = CPCSaveSnapshot();
+	ttgui_osd_restore();
+	if (errSave == errNone)
+		ttgui_osd_center_text("Saved OK!", 1000, NULL);
+	else
+		ttgui_osd_center_text("Error!", 1000, NULL);
+}
+
+void ttgui_otobj_restore_snapshot()
+/***********************************************************************
+*
+* 	 ttgui_otobj_restore_snapshot
+*
+***********************************************************************/
+{
+	char* title = {"Select Session"};
+	ttgui_openModalWindow(title);
+	ttgui_files_list(DEFAULT_CAPRICE_PATH, CONTEXT_EXTENSION, ttgui_otobj_action_snapshot);
+
+	if (pn_obj->num_tx_objs)
+	{
+		pn_obj->on_update_caller = ttgui_update_file_dir;
+		if (tx_obj->on_access_caller != NULL)
+			tx_obj->on_access_caller();
+	}
+	else
+	{
+		// no snapshot available;
+		ttgui_free_file_dir();
+		ttgui_closeModalWindow();
+	}
+}
+
+void ttgui_otobj_action_snapshot()
+/***********************************************************************
+*
+* 	 ttgui_otobj_restore_snapshot
+*
+***********************************************************************/
+{
+	uint16_t file_i = pn_obj->tx_page_n*pn_obj->tx_layout_nr*pn_obj->tx_layout_nc + tx_obj->tx_obj_id;
+	char *fileref = currentDirFileList[file_i];
+	char *session_name;
+
+	session_name = (char*)malloc(strlen(fileref) + 1);
+	strcpy(session_name, fileref);
+	session_name[0]='/';
+
+	printf("On Press Caller: ttgui_otobj_action_snapshot\n");
+	printf("Path: %s\n", curr_dir);
+	printf("FilenameP: %s\n", session_name);
+
+	// reset the Emulator
+	Err Result=CPCColdReset(curr_dir, session_name, LoadWithConfirmation);
+	free(session_name);
+	// reset all related game options
+	ttgui_otobj_reset_game();
+	// restore the window
+	ttgui_free_file_dir();
+	ttgui_closeModalWindow();
+
+	if (Result == errNone)
+		ttgui_osd_center_text("Ready to Go!", 1000, NULL);
+	else
+		ttgui_osd_center_text("Error!", 1000, NULL);
 }

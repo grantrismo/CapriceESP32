@@ -24,6 +24,7 @@
 
 extern Err MemPtrNewLarge(UInt32 size,
                           void **newPtr) SECTION_ROUTINES;
+extern tVoid  MemPtrFreeLarge(void* newPtr) SECTION_ROUTINES;                          
 extern UInt32 TimGetTicks() SECTION_ROUTINES;
 extern UInt32 SysTicksPerSecond() SECTION_ROUTINES;
 

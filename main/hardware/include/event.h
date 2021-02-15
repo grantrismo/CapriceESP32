@@ -35,6 +35,7 @@ typedef enum CapriceEvent {
 	CapriceEventVolumeOkEvent,
 	CapriceEventVolumeFailEvent,
 	CapriceEventBattery10Event,
+	CapriceEventBrightnessOkEvent,
 } CapriceEvent;
 
 typedef struct {
@@ -70,3 +71,4 @@ extern int push_event(event_t *event);
 extern void timer_event_start(uint32_t tickms);
 extern void timer_event_stop();
 extern void timer_event_reset(uint32_t tickms);
+extern void kick_osd_event();

@@ -19,6 +19,8 @@
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
 
+#include "Native_CPC.h"
+
 #include "types.h"
 #include "sections.h"
 #include "vkb_layout.h"
@@ -414,6 +416,8 @@ extern void SelectCPCSpecialKeyboard(void) SECTION_KEYBOARD;
 extern void EnableSpecialKeymapping(void) SECTION_KEYBOARD;
 extern void EnableJoystick(void) SECTION_KEYBOARD;
 extern void DisableJoystick(void) SECTION_KEYBOARD;
+extern void SetSessionKeyMapping(tNativeCPC* NativeCPC) SECTION_KEYBOARD;
+extern void GetSessionKeyMapping(tNativeCPC* NativeCPC) SECTION_KEYBOARD;
 extern void EnableSound(void) SECTION_KEYBOARD;
 extern void DisableSound(void) SECTION_KEYBOARD;
 extern void AutoToggleKeyPressed(void) SECTION_KEYBOARD;

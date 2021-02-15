@@ -1244,10 +1244,14 @@ typedef struct
   tUChar night_mode;
 
   // CPC key code for hard keys. Session dependant.
-  tUChar HardKeyCPCKeyCodeA;
-  tUChar HardKeyCPCKeyCodeB;
-  tUChar HardKeyCPCKeyCodeC;
-  tUChar HardKeyCPCKeyCodeD;
+  tUChar SessionCPCKeyUp;
+  tUChar SessionCPCKeyDown;
+  tUChar SessionCPCKeyRight;
+  tUChar SessionCPCKeyLeft;
+  tUChar SessionCPCKeyCenter;      // A
+  tUChar SessionCPCKeyCenterEx;    // B
+  tUChar SessionCPCKeyStart;       // Start
+  tUChar SessionCPCKeySelect;      // Select
 
   // TRACE
   tUChar TraceDisplay;

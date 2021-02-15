@@ -25,12 +25,14 @@ enum { KEYPAD_UP = 1,
 #define keyBitRockerStart          (KEYPAD_START)
 #define keyBitRockerCenter          (KEYPAD_A | KEYPAD_B)
 #define keyBitRockerMenu            (KEYPAD_B | KEYPAD_MENU)
+#define keyBitRockerMenuOnly        (KEYPAD_MENU)
 #define keyBitRockerViKeyboard      (KEYPAD_A | KEYPAD_MENU)
 #define keyBitRockerNextPanelUp   (KEYPAD_MENU | KEYPAD_UP)
 #define keyBitRockerNextPanelDown   (KEYPAD_MENU | KEYPAD_DOWN)
 #define keyBitRockerNextPanelLeft   (KEYPAD_MENU | KEYPAD_LEFT)
 #define keyBitRockerNextPanelRight   (KEYPAD_MENU | KEYPAD_RIGHT)
 #define keyBitRockerVolume          (KEYPAD_VOLUME)
+
 
 void keypad_init(void);
 uint16_t keypad_sample(void);

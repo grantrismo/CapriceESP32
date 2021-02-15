@@ -10,6 +10,7 @@ static const int DUTY_MAX = 0x1fff;
 static const gpio_num_t LCD_PIN_NUM_BCKL = GPIO_NUM_14;
 static const int LCD_BACKLIGHT_ON_VALUE = 1;
 static bool isBackLightIntialized = false;
+static int BacklightValue = 0;
 
 void backlight_init(void)
 {
@@ -62,6 +63,32 @@ void backlight_percentage_set(int value)
 
 	ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty, 500);
 	ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_NO_WAIT);
+
+	BacklightValue = value;
+	printf("Backlight value: %d\n",BacklightValue);
 }
 
 int is_backlight_initialized(void) { return isBackLightIntialized; }
+
+void backlight_percentage_increase(int step)
+{
+		BacklightValue += step;
+		if (BacklightValue > 100)
+			BacklightValue = 100;
+
+		backlight_percentage_set(BacklightValue);
+}
+
+void backlight_percentage_decrease(int step)
+{
+		BacklightValue -= step;
+		if (BacklightValue < 0)
+			BacklightValue = 0;
+
+		backlight_percentage_set(BacklightValue);
+}
+
+int backlight_percentage_get(void)
+{
+	return(BacklightValue);
+}

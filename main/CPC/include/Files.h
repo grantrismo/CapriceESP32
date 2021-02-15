@@ -35,7 +35,7 @@
 #ifdef SIM
 #define ROOT_PATH                 "/"
 #define DEFAULT_DISK_PATH         "../games"
-#define DEFAULT_CAPRICE_PATH      "."
+#define DEFAULT_CAPRICE_PATH      "../sessions"
 #define DEFAULT_SCREENSHOT_PATH   "."
 #define DEFAULT_CHEAT_PATH        "../cheat"
 #define DEFAULT_KEYMAPPING_PATH   "../keymap"
@@ -72,8 +72,8 @@
 #define memErrNotEnoughSpace          (memErrorClass | 2)
 
 // missing items from PalmOS
-#define EndianSwap32(p) p
-#define EndianSwap16(p) p
+#define EndianSwap32
+#define EndianSwap16
 
 typedef enum
 {
@@ -165,7 +165,7 @@ extern Err LoadDiskImageFromMemory(tDrive* nativedriveP,
 
 extern UInt16 ReadDiskCatalogue(tDriveEnum drive, tUChar User, char** CatP, tNativeCPC* NativeCPC) SECTION_FILES;
 
-extern Err LoadKeymapFromConfigFile(tDrive* nativedriveP, const char* Key, char** Setting) SECTION_FILES; 
+extern Err LoadKeymapFromConfigFile(tDrive* nativedriveP, const char* Key, char** Setting) SECTION_FILES;
 
 extern Err SaveDiskImage(const char* pathP,
                          tDrive* nativedriveP,

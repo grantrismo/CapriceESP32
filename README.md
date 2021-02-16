@@ -15,7 +15,7 @@ Here we go, a first pre-release of the ESP32, Odroid GO version of the Caprice C
 
 whatever_sd_card_name_you_take/
 - /cpc/dsk  :: Search path for DISK images
-- /cpc/cps  :: Default snapshot path (not used yet)
+- /cpc/cps  :: Default snapshot path
 - /cpc/scr  :: Default screenshot path (not used yet)
 - /cpc/cmf  :: Holding the cheat (cheat mode format) files
 - /cpc/kmf  :: Default keymap file path

@@ -47,6 +47,7 @@ static void ttgui_otobj_save_snapshot();
 static void ttgui_otobj_exe_save_snapshot();
 static void ttgui_otobj_restore_snapshot();
 static void ttgui_otobj_action_snapshot();
+static void ttgui_otobj_cold_reset();
 
 // Option Test, Possible Selections, inital selection index, max number of selections
 const ttgui_ot_obj ot_obj_setup[NUM_TOTAL_OPTIONS] = {
@@ -56,6 +57,7 @@ const ttgui_ot_obj ot_obj_setup[NUM_TOTAL_OPTIONS] = {
 	{TTGUI_OT_AUDIO, 0, ttgui_otobj_change_audio, "Driver: ", {2, (char*[]){"Speaker","Bluetooth"}}},
 	{TTGUI_OT_SAVESNAPSHOT, 0, ttgui_otobj_exe_save_snapshot, "Session: ", {1, (char*[]){"Save"}}},
 	{TTGUI_OT_LOADSNAPSHOT, 0, ttgui_otobj_restore_snapshot, "Session: ", {1, (char*[]){"Restore"}}},
+	{TTGUI_OT_COLDRESET, 0, ttgui_otobj_cold_reset,"Emulator: ", {1, (char*[]){"Reset"}}},
 };
 
 // globals
@@ -2520,6 +2522,20 @@ void ttgui_otobj_action_snapshot()
 
 	if (Result == errNone)
 		ttgui_osd_center_text("Ready to Go!", 1000, NULL);
+	else
+		ttgui_osd_center_text("Error!", 1000, NULL);
+}
+
+void ttgui_otobj_cold_reset()
+/***********************************************************************
+*
+* 	 ttgui_otobj_cold_reset()
+*
+***********************************************************************/
+{
+	Err Result = CPCColdReset(NULL, NULL, NoLoad);
+	if (Result == errNone)
+		ttgui_osd_center_text("Reset Done!", 1000, NULL);
 	else
 		ttgui_osd_center_text("Error!", 1000, NULL);
 }

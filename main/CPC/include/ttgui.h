@@ -103,6 +103,7 @@ typedef enum
 	TTGUI_OT_AUDIO,
 	TTGUI_OT_SAVESNAPSHOT,
 	TTGUI_OT_LOADSNAPSHOT,
+	TTGUI_OT_COLDRESET,
 	// must be last!!
 	NUM_TOTAL_OPTIONS,
 } ttgui_ot_type;

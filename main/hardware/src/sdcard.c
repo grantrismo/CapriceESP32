@@ -31,8 +31,11 @@ int sdcard_init(const char *mount_path)
 	slot_config.gpio_cs = SDCARD_IO_CS;
 
 	esp_vfs_fat_sdmmc_mount_config_t mount_config = {0};
+	mount_config.allocation_unit_size = 0;
 	mount_config.format_if_mount_failed = false;
 	mount_config.max_files = 5;
+
+	esp_vfs_fat_sdmmc_unmount();
 
 	return esp_vfs_fat_sdmmc_mount(mount_path, &host, &slot_config, &mount_config, &sdcard);
 
@@ -58,8 +61,11 @@ int sdcard_init(const char *mount_path)
 	slot_config.host_id = host.slot;
 
 	esp_vfs_fat_sdmmc_mount_config_t mount_config = {0};
+	mount_config.allocation_unit_size = 0;
 	mount_config.format_if_mount_failed = false;
 	mount_config.max_files = 5;
+
+	esp_vfs_fat_sdmmc_unmount();
 
 	return esp_vfs_fat_sdspi_mount(mount_path, &host, &slot_config, &mount_config, &sdcard);
 #endif

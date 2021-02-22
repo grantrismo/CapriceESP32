@@ -60,6 +60,9 @@
      continue;
     }
 
+    // Setup sdcard and display error message on failure
+    sdcard_init("/sd");
+    
     // hardware or SDL display init
     display_init();
     backlight_init();
@@ -76,9 +79,6 @@
       printf("Error on getting Sound Buffers\n");
       continue;
     }
-
-    // Setup sdcard and display error message on failure
-    sdcard_init("/sd");
 
     // try to start BT
 #ifndef SIM

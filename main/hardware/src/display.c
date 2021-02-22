@@ -47,6 +47,7 @@ SemaphoreHandle_t display_mutex = NULL;
 spi_transaction_t global_transaction;
 bool use_polling = false;
 bool isBackLightIntialized = false;
+static TaskHandle_t xTaskToNotify = NULL;
 
 uint8_t stopDisplay = 0;
 int32_t timeDelta = 0;
@@ -282,6 +283,20 @@ static void ili_spi_pre_transfer_callback(spi_transaction_t *t)
     gpio_set_level(LCD_PIN_NUM_DC, dc);
 }
 
+static void ili_spi_post_transfer_callback(spi_transaction_t *t)
+{
+	if (xTaskToNotify && t == &trans[SPI_TRANSACTION_COUNT-1]) {
+		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+		/* Notify the task that the transmission is complete. */
+		vTaskNotifyGiveFromISR(xTaskToNotify, &xHigherPriorityTaskWoken);
+
+		if (xHigherPriorityTaskWoken) {
+			portYIELD_FROM_ISR();
+		}
+	}
+}
+
 //Initialize the display
 static void ili_init()
 {
@@ -408,17 +423,18 @@ void display_init()
     devcfg.clock_speed_hz = LCD_SPI_CLOCK_RATE;
     devcfg.mode = 0;                                //SPI mode 0
     devcfg.spics_io_num = LCD_PIN_NUM_CS;               //CS pin
-    devcfg.queue_size = 7;                          //We want to be able to queue 7 transactions at a time
+    devcfg.queue_size = SPI_TRANSACTION_COUNT;      //We want to be able to queue 7 transactions at a time
     devcfg.pre_cb = ili_spi_pre_transfer_callback;  //Specify pre-transfer callback to handle D/C line
+    //devcfg.post_cb = ili_spi_post_transfer_callback;
     devcfg.flags = SPI_DEVICE_NO_DUMMY; //SPI_DEVICE_HALFDUPLEX;
 
     //Initialize the SPI bus
     ret=spi_bus_initialize(HSPI_HOST, &buscfg, 1);
-    assert(ret==ESP_OK);
+    //assert(ret==ESP_OK); // SHARE SPI, will not boot!!
 
     //Attach the LCD to the SPI bus
     ret=spi_bus_add_device(HSPI_HOST, &devcfg, &spi);
-    assert(ret==ESP_OK);
+    //assert(ret==ESP_OK); // SHARE SPI, will not boot!!
 
     //Initialize the LCD
 	  printf("LCD: calling ili_init.\n");
@@ -700,6 +716,11 @@ void inline display_unlock()
 
 void inline display_stop()
 {
+  if (!display_mutex)
+  {
+      display_mutex = xSemaphoreCreateMutex();
+      if (!display_mutex) abort();
+  }
 		xSemaphoreTake(display_mutex,portMAX_DELAY);
 }
 void inline display_resume()

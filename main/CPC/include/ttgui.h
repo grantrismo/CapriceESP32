@@ -54,6 +54,16 @@ Window manager knows the active panel and attaches the naviagtion to it
 #define MemPtrNew(p) malloc(p)
 #define MemPtrFree(p) free(p)
 
+// Panel navigation
+typedef enum
+{
+	TTGUI_PN_IDLE,
+	TTGUI_PN_ITEM_DOWN,
+	TTGUI_PN_ITEM_UP,
+	TTGUI_PN_PAGE_DOWN,
+	TTGUI_PN_PAGE_UP,
+} ttgui_pn_nav;
+
 // OSD
 typedef enum
 {
@@ -104,6 +114,7 @@ typedef enum
 	TTGUI_OT_SAVESNAPSHOT,
 	TTGUI_OT_LOADSNAPSHOT,
 	TTGUI_OT_COLDRESET,
+	TTGUI_OT_BOOTTOFW,
 	// must be last!!
 	NUM_TOTAL_OPTIONS,
 } ttgui_ot_type;
@@ -187,6 +198,7 @@ typedef struct
 	uint8_t tx_layout_nc;					// layout of the panel, how many text rows it supports
 	uint8_t tx_max_len;						// max text lenght supported by the panel
 	uint16_t tx_page_n;						// page number in case panel holds more than (tx_layout_nr*tx_layout_nc) tx_objects
+	ttgui_pn_nav pn_nav_action;   // davigation action to take on panel update
 } ttgui_pn_obj;
 
 //header Object:

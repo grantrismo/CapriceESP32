@@ -29,10 +29,10 @@
 //#define DUAL_BUFFER_CONFIG
 
 const ttgui_pn_obj pn_obj_setup[NUM_TOTAL_PANELS] = {
-	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Select Game"        , 0  ,0  ,159,119,12,1,19,0}, // SDCARD selector pannel
-	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Select Autostart"   , 0  ,161,159,119,12,1,19,0}, // CAT selector pannel
-	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Preferences (V0.84)", 121,0  ,320,119,12,2,19,0}, // SETTINGS selector panel
-	{0,3,3,3,3,NULL,0,NULL,NULL,NULL,"Modal              ", 60 ,60 ,199,119,12,1,24,0}, // MODAL selector panel
+	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Select Game"        , 0  ,0  ,159,119,12,1,19,0,TTGUI_PN_IDLE}, // SDCARD selector pannel
+	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Select Autostart"   , 0  ,161,159,119,12,1,19,0,TTGUI_PN_IDLE}, // CAT selector pannel
+	{0,0,1,0,2,NULL,0,NULL,NULL,NULL,"Preferences (V0.84)", 121,0  ,320,119,12,2,19,0,TTGUI_PN_IDLE}, // SETTINGS selector panel
+	{0,3,3,3,3,NULL,0,NULL,NULL,NULL,"Modal              ", 60 ,60 ,199,119,12,1,24,0,TTGUI_PN_IDLE}, // MODAL selector panel
 };
 
 // caller prototypes
@@ -48,16 +48,18 @@ static void ttgui_otobj_exe_save_snapshot();
 static void ttgui_otobj_restore_snapshot();
 static void ttgui_otobj_action_snapshot();
 static void ttgui_otobj_cold_reset();
+static void ttgui_otobj_boot_to_firmware();
 
 // Option Test, Possible Selections, inital selection index, max number of selections
 const ttgui_ot_obj ot_obj_setup[NUM_TOTAL_OPTIONS] = {
 	{TTGUI_OT_GAME, 0, ttgui_otobj_change_cheat, "Cheat: ", {2, (char*[]){"off","on"}}},
 	{TTGUI_OT_PREFS, 0, ttgui_otobj_change_sound, "Sound: ", {2, (char*[]){"on","off"}}},
 	{TTGUI_OT_BT, 0, ttgui_otobj_change_bt, "BT Audio: ", {3, (char*[]){"unpaired","pairing","paired"}}},
-	{TTGUI_OT_AUDIO, 0, ttgui_otobj_change_audio, "Driver: ", {2, (char*[]){"Speaker","Bluetooth"}}},
+	{TTGUI_OT_AUDIO, 0, ttgui_otobj_change_audio, "Driver: ", {3, (char*[]){"Speaker","Bluetooth","Line"}}},
 	{TTGUI_OT_SAVESNAPSHOT, 0, ttgui_otobj_exe_save_snapshot, "Session: ", {1, (char*[]){"Save"}}},
 	{TTGUI_OT_LOADSNAPSHOT, 0, ttgui_otobj_restore_snapshot, "Session: ", {1, (char*[]){"Restore"}}},
 	{TTGUI_OT_COLDRESET, 0, ttgui_otobj_cold_reset,"Emulator: ", {1, (char*[]){"Reset"}}},
+	{TTGUI_OT_BOOTTOFW, 0, ttgui_otobj_boot_to_firmware,"Boot to: ", {1, (char*[]){"Firmware"}}},
 };
 
 // globals
@@ -805,7 +807,9 @@ void ttgui_setup()
 void ttgui_PanelDeConstructor()
 {
 	// free the Memory
-
+	ttgui_free();
+	MemPtrFree(pn_obj->tx_obj_base);
+	pn_obj->tx_obj_base = NULL;
 }
 
 ttgui_err ttgui_osdManager(event_t* event)
@@ -845,6 +849,22 @@ ttgui_err ttgui_osdManager(event_t* event)
 	}
 	else
 		return(TTGUI_ERRNONE);
+}
+
+void ttgui_panel_page_control(ttgui_pn_nav navigation_action)
+{
+	if (tx_obj->on_leave_caller != NULL)
+		tx_obj -> on_leave_caller();
+
+	if (pn_obj -> on_update_caller != NULL)
+	{
+		pn_obj -> pn_nav_action = navigation_action;
+		pn_obj -> on_update_caller();
+		pn_obj -> pn_nav_action = TTGUI_PN_IDLE;
+	}
+
+	if (tx_obj -> on_access_caller != NULL)
+		tx_obj -> on_access_caller();
 }
 
 ttgui_err ttgui_windowManager(event_t* event)
@@ -980,6 +1000,7 @@ ttgui_err ttgui_windowManager(event_t* event)
 	if (tx_obj == NULL)
 		return(TTGUI_NOTXOBJ);
 
+	// Navigation up
 	if (keyDiff & (keyBitRockerUp))
 	{
 		if (keyState & (keyBitRockerUp))
@@ -994,14 +1015,7 @@ ttgui_err ttgui_windowManager(event_t* event)
 			else
 			{
 				// page up support
-				if (tx_obj->on_leave_caller != NULL)
-					tx_obj -> on_leave_caller();
-
-				if (pn_obj -> on_update_caller != NULL)
-					pn_obj -> on_update_caller();
-
-				if (tx_obj -> on_access_caller != NULL)
-					tx_obj -> on_access_caller();
+				ttgui_panel_page_control(TTGUI_PN_PAGE_UP);
 			}
 		}
 		else
@@ -1009,7 +1023,7 @@ ttgui_err ttgui_windowManager(event_t* event)
 			// released
 		}
 	}
-
+	// navigation down
 	if (keyDiff & (keyBitRockerDown))
 	{
 		if (keyState & (keyBitRockerDown))
@@ -1024,19 +1038,32 @@ ttgui_err ttgui_windowManager(event_t* event)
 			else
 			{
 				// page up support
-				if (tx_obj->on_leave_caller != NULL)
-					tx_obj -> on_leave_caller();
-
-				if (pn_obj -> on_update_caller != NULL)
-					pn_obj -> on_update_caller();
-
-				if (tx_obj -> on_access_caller != NULL)
-					tx_obj -> on_access_caller();
+				ttgui_panel_page_control(TTGUI_PN_PAGE_DOWN);
 			}
 		}
 		else
 		{
 			// released
+		}
+	}
+
+	// navigation left
+	if (keyDiff & (keyBitRockerLeft))
+	{
+		if (keyState & (keyBitRockerLeft))
+		{
+			// page up support
+			ttgui_panel_page_control(TTGUI_PN_PAGE_UP);
+		}
+	}
+
+	// navigation right
+	if (keyDiff & (keyBitRockerRight))
+	{
+		if (keyState & (keyBitRockerRight))
+		{
+			// page up support
+			ttgui_panel_page_control(TTGUI_PN_PAGE_DOWN);
 		}
 	}
 
@@ -1583,7 +1610,6 @@ static void ttgui_open_file_dir()
  *
  ***********************************************************************/
  {
-	 printf("**Panel ID: %d\n",hd_obj->onfocus_pn_obj_index);
 	 if (hd_obj->onfocus_pn_obj_index == PANEL_GAME_ID)
 	 {
 	 	// show the file list of disk files
@@ -1650,28 +1676,28 @@ static void ttgui_update_file_dir()
 *
 ***********************************************************************/
 {
-	// top end reached?
-	if ((tx_obj->above == TTGUI_NIL) && (pn_obj->tx_page_n == 0))
-		return;
-
 	// only one singe tx_obj available?
 	if ((tx_obj->above == TTGUI_NIL) && (tx_obj->below == TTGUI_NIL) && (pn_obj->tx_page_n == 0))
 		return;
 
 
-	if (tx_obj->above == TTGUI_NIL)
+	if (pn_obj -> pn_nav_action == TTGUI_PN_PAGE_UP)
 	{
+		// top end reached?
+		if (pn_obj->tx_page_n == 0)
+			return;
+
 		pn_obj->tx_page_n--;
 		ttgui_open_file_dir();
 		return;
 	}
 
-	// bottom end reached?
-	if((pn_obj->tx_page_n+1)*pn_obj->tx_layout_nr*pn_obj->tx_layout_nc >= currentDirFileCount)
-		return;
-
-	if (tx_obj->below == TTGUI_NIL)
+	if (pn_obj -> pn_nav_action == TTGUI_PN_PAGE_DOWN)
 	{
+		// bottom end reached?
+		if((pn_obj->tx_page_n+1)*pn_obj->tx_layout_nr*pn_obj->tx_layout_nc >= currentDirFileCount)
+			return;
+
 		pn_obj->tx_page_n++;
 		ttgui_open_file_dir();
 	}
@@ -2080,10 +2106,7 @@ uint16_t ttgui_otobj_update_defaults(ttgui_ot_type type, uint16_t current)
 	}
 	else if (type == TTGUI_OT_AUDIO)
 	{
-		if (prefP->SoundRenderer == 0)
-			return (0);
-		else
-			return (1);
+		return (prefP->SoundRenderer);
 	}
 	else
 		return(current);
@@ -2302,21 +2325,34 @@ void ttgui_otobj_change_audio()
 {
 	uint16_t tx_ot_id = tx_obj-> tx_obj_id;
 	uint8_t sink_id = 0;
-	if (ot_obj[tx_ot_id].current == 0)
-	{
-		// switch to bluetooth audio
-		if (!a2dp_media_is_ready())
-		{
-				ttgui_osd_center_text("No BT Device", 1000, NULL);
-				return;
-		}
-		sink_id = 1;
-	}
-	else
-	{
-		sink_id = 0;
 
+	switch (ot_obj[tx_ot_id].current)
+	{
+		case 1:
+			// from BT to Line
+			sink_id = 2;
+		break;
+
+		case 2:
+			// from Line back to Speaker
+			sink_id = 0;
+		break;
+
+		default: // 0
+			// switch to bluetooth audio
+			if (a2dp_media_is_ready())
+			{
+					//ttgui_osd_center_text("No BT Device", 1000, NULL);
+					//return;
+					sink_id = 1;
+			}
+			else
+			{
+					// switch to line
+					sink_id = 2;
+			}
 	}
+
 	if (CPCSwitchAudio(sink_id) == errNone)
 	{
 				ot_obj[tx_ot_id].current = sink_id;
@@ -2538,4 +2574,14 @@ void ttgui_otobj_cold_reset()
 		ttgui_osd_center_text("Reset Done!", 1000, NULL);
 	else
 		ttgui_osd_center_text("Error!", 1000, NULL);
+}
+
+void ttgui_otobj_boot_to_firmware()
+/***********************************************************************
+*
+* 	 ttgui_otobj_boot_to_firmware()
+*
+***********************************************************************/
+{
+	kick_reboot_event();
 }

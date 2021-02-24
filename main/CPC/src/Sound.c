@@ -249,8 +249,8 @@ tVoid SoundPlay(tNativeCPC* NativeCPC)
 
 tPSG* PSG = (tPSG*)(NativeCPC->PSG);
 
-  if (audio_device_active() == false)
-    return;
+//  if (audio_device_active() == false)
+//    return;
 
   if (prefP->SoundEnabled == 0)
     return;
@@ -271,14 +271,45 @@ tPSG* PSG = (tPSG*)(NativeCPC->PSG);
 
   PSG->snd_enabled = 1;
 
-  if (prefP->SoundRenderer == 0)
+  switch (prefP->SoundRenderer)
   {
-    i2s_set_emu_state_running();
-    audio_play();
-  }
-  else
-    a2dp_set_emu_state_running();
+    // BT audio
+    case 1:
+      if (audio_device_active())
+          audio_shutdown();
 
+      a2dp_set_emu_state_running();
+      break;
+
+    // LINE out (I2S)
+    case 2:
+      if (audio_output_get() != AudioOutputDAC)
+      {
+        if (audio_device_active())
+            audio_shutdown();
+
+        audio_output_set(AudioOutputDAC);
+        audio_init();
+      }
+
+      i2s_set_emu_state_running();
+      audio_play();
+      break;
+
+    // SPEAKER
+    default:
+      if (audio_output_get() != AudioOutputSpeaker)
+      {
+        if (audio_device_active())
+            audio_shutdown();
+
+        audio_output_set(AudioOutputSpeaker);
+        audio_init();
+      }
+      
+      i2s_set_emu_state_running();
+      audio_play();
+  }
 
   SOUNDPLAY_TRACE_SHOW_INT(4);
 }

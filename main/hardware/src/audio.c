@@ -119,7 +119,7 @@ int audio_init()
 		fprintf(stderr, "Audio already initialized!\n");
 		return -1;
 	}
-	static AudioOutput output = AudioOutputSpeaker;
+	AudioOutput output = chosen_output;
 
 	const i2s_mode_t mode_dac = I2S_MODE_MASTER | I2S_MODE_TX;
 	const i2s_mode_t mode_speaker = I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN;

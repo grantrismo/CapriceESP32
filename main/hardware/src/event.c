@@ -119,3 +119,9 @@ void kick_osd_event()
 	event_t ev = {.caprice.head.type = EVENT_TYPE_CAPRICE, .caprice.event = CapriceEventTimerEvent};
 	push_event(&ev);
 }
+
+void kick_reboot_event()
+{
+	event_t ev = {.type = EVENT_TYPE_QUIT};
+	push_event(&ev);
+}

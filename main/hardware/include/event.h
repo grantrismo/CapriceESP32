@@ -72,3 +72,4 @@ extern void timer_event_start(uint32_t tickms);
 extern void timer_event_stop();
 extern void timer_event_reset(uint32_t tickms);
 extern void kick_osd_event();
+extern void kick_reboot_event();

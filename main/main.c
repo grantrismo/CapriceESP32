@@ -62,7 +62,7 @@
 
     // Setup sdcard and display error message on failure
     sdcard_init("/sd");
-    
+
     // hardware or SDL display init
     display_init();
     backlight_init();
@@ -130,6 +130,7 @@ static void app_shutdown(void)
 	// stop and deallocate CPC
   AppStop();
   audio_shutdown();
+  ttgui_PanelDeConstructor();
   sdcard_deinit();
 	display_poweroff();
 	system_reboot_to_firmware();
@@ -444,7 +445,7 @@ void app_main_task(void *arg)
               PSG->snd_bufferptr = PSG->pbSndBuffer;
             }
 
-            if (prefP->SoundRenderer == 0)
+            if (prefP->SoundRenderer != 1)
             {
               audio_submit();
             }

@@ -587,59 +587,75 @@ static const tKeySetting EmulatorKeysSettings[] =
 static const tKeySetting CPCColouredKeysSettings[] =
 {
 	// tKeySetting
-	// Left, Top, Width, Height,
-	// resKeyUp, resKeyDown,
-	// KeyMode, CPCKey, charCode_Normal, charCode_Shift,
-	// OnPushedP, OnReleasedP
+  /*
+  tUShort Left;
+  tUShort Top;
+  tUShort Width;
+  tUShort Height;
+  DmResID resKeyUp;
+  DmResID resKeyDown;
+  tKeyMode KeyMode;
+  tUChar CPCKey;
+  tUChar charCode_Normal;
+  tUChar charCode_Shift;
+  void (*OnPushedP)(void);
+  void (*OnReleasedP)(void);
+  tUChar NextLeft;
+  tUChar NextRight;
+  tUChar NextUp;
+  tUChar NextDown;
+  tUChar yBase;
+  */
+
 
   // ESC Key
   { ESC_KEY_X, ICONS_SUB_Y, ESC_KEY_WIDTH, KEY_ICON_HEIGHT,
     CPCKey_ESC_Released, CPCKey_ESC_Pushed,
     KeyImpulse, CPC_KEY_ESC, 0, 0,
-    NULL, NULL },
+    NULL, NULL,0,0,0,0,0},
   // COPY Key
   { COPY_KEY_X, ICONS_SUB_Y, COPY_KEY_WIDTH, KEY_ICON_HEIGHT,
     CPCKey_COPY_Released, CPCKey_COPY_Pushed,
     KeyImpulse, CPC_KEY_COPY, 0, 0,
-    NULL, NULL },
+    NULL, NULL,0,0,0,0,0 },
   // SHIFT Key
   { SHIFT_KEY_X, ICONS_SUB_Y, SHIFT_KEY_WIDTH, KEY_ICON_HEIGHT,
     CPCKey_SHIFT_Released, CPCKey_SHIFT_Pushed,
     KeyToggle, CPC_KEY_NONE, 0, 0,
-    SHIFTKeyPressed, SHIFTKeyPressed },
+    SHIFTKeyPressed, SHIFTKeyPressed,0,0,0,0,0 },
   // CTRL Key
   { CTRL_KEY_X, ICONS_SUB_Y, CTRL_KEY_WIDTH, KEY_ICON_HEIGHT,
     CPCKey_CTRL_Released, CPCKey_CTRL_Pushed,
     KeyToggle, CPC_KEY_NONE, 0, 0,
-    CTRLKeyPressed, CTRLKeyPressed },
+    CTRLKeyPressed, CTRLKeyPressed,0,0,0,0,0 },
   // CAPSLOCK Key
   { CAPSLOCK_KEY_X, ICONS_SUB_Y, CAPSLOCK_KEY_WIDTH, KEY_ICON_HEIGHT,
     CPCKey_CAPSLOCK_Released, CPCKey_CAPSLOCK_Pushed,
     KeyImpulse, CPC_KEY_CAPSLOCK, 0, 0,
-    NULL, NULL },
+    NULL, NULL,0,0,0,0,0 },
   // TAB Key
   { TAB_KEY_X, ICONS_SUB_Y, TAB_KEY_WIDTH, KEY_ICON_HEIGHT,
     CPCKey_TAB_Released, CPCKey_TAB_Pushed,
     KeyImpulse, CPC_KEY_TAB, 0, 0,
-    NULL, NULL },
+    NULL, NULL,0,0,0,0,0 },
   // DEL Key
   { DEL_KEY_X, ICONS_SUB_Y, DEL_KEY_WIDTH, KEY_ICON_HEIGHT,
     CPCKey_DEL_Released, CPCKey_DEL_Pushed,
     KeyImpulse, CPC_KEY_DEL, 0, 0,
-    NULL, NULL },
+    NULL, NULL,0,0,0,0,0 },
   // ENTER Key
   { ENTER_KEY_X, ICONS_SUB_Y, ENTER_KEY_WIDTH, KEY_ICON_HEIGHT,
     CPCKey_ENTER_Released, CPCKey_ENTER_Pushed,
     KeyImpulse, CPC_KEY_ENTER, 0, 0,
-    NULL, NULL },
+    NULL, NULL,0,0,0,0,0 },
   // Top Arrow
   { ARROW_X, ARROW_Y, ARROW_WIDTH, ARROW_HEIGHT,
     0, 0,
     KeyImpulse, CPC_KEY_NONE, 0, 0,
-    NULL, NULL },
+    NULL, NULL,0,0,0,0,0 },
 };
 
-
+/*
 static const tKeySetting CPCSpecialKeysSettings[] =
 {
 	// tKeySetting
@@ -680,7 +696,7 @@ static const tKeySetting CPCSpecialKeysSettings[] =
   //   DisplayCPCColouredKeyboard, NULL },
 };
 
-
+*/
 
 
 tKey DriveKeys[NB_DRIVE_KEYS];
@@ -1756,10 +1772,10 @@ void InitKeys(void)
                 NB_CPC_COLOURED_KEYS,
                 CPCColouredKeysSettings,
                 0);
-  InitKeysPanel(CPCSpecialKeys,
-                NB_CPC_SPECIAL_KEYS,
-                CPCSpecialKeysSettings,
-                0);
+  //InitKeysPanel(CPCSpecialKeys,
+  //              NB_CPC_SPECIAL_KEYS,
+  //              CPCSpecialKeysSettings,
+  //              0);
 
   EmulatorKeysStatus.SoundKeyStatus = KeyReleased;
   EmulatorKeysStatus.FxKeyStatus = KeyReleased;
@@ -2040,17 +2056,17 @@ Boolean ShiftPressed;
   //
 #ifndef __RELEASE__
   if (keyboardP->keyRShiftP == NULL)
-    DBG_PRINT("keyboardP->keyRShiftP == NULL\n");
+    {DBG_PRINT("keyboardP->keyRShiftP == NULL\n");}
 #endif /* __RELEASE__ */
   PrepareOffscreenKey(keyboardP->keyRShiftP,keyboardP->keyRShiftP->KeyStatus);
 #ifndef __RELEASE__
   if (keyboardP->keyLShiftP == NULL)
-    DBG_PRINT("keyboardP->keyLShiftP == NULL\n");
+    {DBG_PRINT("keyboardP->keyLShiftP == NULL\n");}
 #endif /* __RELEASE__ */
   PrepareOffscreenKey(keyboardP->keyLShiftP,keyboardP->keyRShiftP->KeyStatus);
 #ifndef __RELEASE__
   if (keyboardP->keyCTRLP == NULL)
-    DBG_PRINT("keyboardP->keyCTRLP == NULL\n");
+    {DBG_PRINT("keyboardP->keyCTRLP == NULL\n");}
 #endif /* __RELEASE__ */
   PrepareOffscreenKey(keyboardP->keyCTRLP,keyboardP->keyRShiftP->KeyStatus);
 

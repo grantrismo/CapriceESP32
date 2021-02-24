@@ -47,6 +47,13 @@ typedef enum {
   EMU_AV_MEDIA_STATE_RUNNING,
 } EmuState;
 
+const i2s_pin_config_t dac_pin_config = {
+		.bck_io_num = 4,
+		.ws_io_num = 12,
+		.data_out_num = 15,
+		.data_in_num = -1 // Not used
+};
+
 static int audio_volume = 50;
 static float audio_volume_f = 0.5f;
 
@@ -56,7 +63,8 @@ static DriverState driver_state = STATE_DRIVER_DISABLED;
 static EmuState s_emu_state = EMU_AV_MEDIA_STATE_IDLE;
 
 static uint16_t AudioTaskCommand = 1;
-static QueueHandle_t audioQueue;
+static QueueHandle_t audioQueue = NULL;
+static xTaskHandle vid_task_handle = NULL;
 
 // some prototypes
 static void audio_submit_i2s(int16_t *buf, int n_frames);
@@ -136,13 +144,6 @@ int audio_init()
 				   .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
 				   .use_apll = output == true ? true : false};
 
-	const i2s_pin_config_t dac_pin_config = {
-	    .bck_io_num = 4,
-	    .ws_io_num = 12,
-	    .data_out_num = 15,
-	    .data_in_num = -1 // Not used
-	};
-
 	esp_err_t error;
 	if ((error = i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL)) != ESP_OK) {
 		// TODO: Need some other system wide error handling
@@ -154,6 +155,8 @@ int audio_init()
 	chosen_output = output;
 
 	if (output == AudioOutputDAC) {
+		// Enable the Pins
+		i2s_set_pin(I2S_NUM, &dac_pin_config);
 		// Disable interal amplifier when using DAC
 		shutdown_speaker();
 	} else {
@@ -168,8 +171,11 @@ int audio_init()
 	}
 
 	// Start the audio task LOOP
-	audioQueue = xQueueCreate(1, sizeof(uint16_t*));
-	xTaskCreatePinnedToCore(&audioTask, "audioTask", 1024*2, NULL, 5, NULL, 0);
+	if (audioQueue == NULL)
+		audioQueue = xQueueCreate(1, sizeof(uint16_t*));
+
+	if (vid_task_handle == NULL)
+		xTaskCreatePinnedToCore(&audioTask, "audioTask", 1024*2, NULL, 5, &vid_task_handle, 0);
 
 	return 0;
 }
@@ -238,7 +244,12 @@ int audio_shutdown(void)
 		return -1;
 	}
 
-	shutdown_speaker();
+	// IO Control
+	if (chosen_output == AudioOutputDAC)
+		i2s_set_pin(I2S_NUM, NULL);
+	else
+		shutdown_speaker();
+
 	driver_state = STATE_DRIVER_DISABLED;
 
 	return 0;
@@ -325,8 +336,13 @@ void audio_play(void)
 {
 	if (driver_state != STATE_DRIVER_DISABLED)
 	{
-		i2s_start(I2S_NUM);
-		drive_speaker();
+		//i2s_start(I2S_NUM);
+
+		if (chosen_output == AudioOutputDAC)
+			i2s_set_pin(I2S_NUM, &dac_pin_config);
+		else
+			drive_speaker();
+
 		driver_state = STATE_ACTIVE_FEEDING;
 	}
 }
@@ -336,8 +352,13 @@ void audio_pause(void)
 {
 	if (driver_state != STATE_DRIVER_DISABLED)
 	{
-		shutdown_speaker();
-		i2s_stop(I2S_NUM);
+		// IO Control
+		if (chosen_output == AudioOutputDAC)
+			i2s_set_pin(I2S_NUM, NULL);
+		else
+			shutdown_speaker();
+
+		//i2s_stop(I2S_NUM);
 		driver_state = STATE_SILENCE_FEEDING;
 	}
 }

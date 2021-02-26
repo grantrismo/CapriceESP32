@@ -352,14 +352,14 @@ void audio_pause(void)
 {
 	if (driver_state != STATE_DRIVER_DISABLED)
 	{
+		driver_state = STATE_SILENCE_FEEDING;
+		rb_reset(audio_rb);
+
 		// IO Control
 		if (chosen_output == AudioOutputDAC)
 			i2s_set_pin(I2S_NUM, NULL);
 		else
 			shutdown_speaker();
-
-		//i2s_stop(I2S_NUM);
-		driver_state = STATE_SILENCE_FEEDING;
 	}
 }
 
